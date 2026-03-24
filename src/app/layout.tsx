@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "@/lib/auth";
 
 export const metadata: Metadata = {
     title: "ProctorAI — Intelligent Exam Surveillance",
     description:
-        "Next-generation AI-powered exam proctoring with 5-channel multimodal behavioral analysis, real-time monitoring, and privacy-first architecture.",
+        "Next-generation AI-powered exam proctoring with 5-channel multimodal behavioral analysis, real-time monitoring, and privacy-first architecture. Observe. Understand. Protect.",
     keywords: ["AI proctoring", "exam monitoring", "behavioral analysis", "online exam", "cheating detection"],
+    openGraph: {
+        title: "ProctorAI — Intelligent Exam Surveillance",
+        description: "5-channel multimodal behavioral analysis with browser-side AI. Privacy-first, fairness-driven.",
+        type: "website",
+    },
 };
 
 export default function RootLayout({
@@ -23,7 +29,9 @@ export default function RootLayout({
                     rel="stylesheet"
                 />
             </head>
-            <body className="noise-overlay">{children}</body>
+            <body className="noise-overlay">
+                <AuthProvider>{children}</AuthProvider>
+            </body>
         </html>
     );
 }
