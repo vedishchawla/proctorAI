@@ -73,17 +73,23 @@ export function analyzeAudio(calibration?: CalibrationData): SignalReading {
         const speechRatio = totalEnergy > 0 ? speechEnergy / totalEnergy : 0;
 
         // Ambient noise baseline from calibration
-        const ambientLevel = calibration?.ambientNoiseLevel || 0.05;
-        const adjustedVolume = Math.max(0, volume - ambientLevel);
+        const ambientLevel = calibration?.ambientNoiseLevel || 0.02;
+        const adjustedVolume = Math.max(0, volume - ambientLevel * 0.5);
 
         // Score: loud + speech-like = suspicious
         let score = 0;
-        if (adjustedVolume > 0.15 && speechRatio > 0.4) {
+        
+        // Debug log so we can see what the mic is actually hearing
+        if (adjustedVolume > 0.005) {
+            console.log(`[Audio] Vol: ${volume.toFixed(3)}, Adj: ${adjustedVolume.toFixed(3)}, Speech: ${speechRatio.toFixed(2)}`);
+        }
+
+        if (adjustedVolume > 0.01 && speechRatio > 0.1) {
             // Likely speech
-            score = Math.min(1, adjustedVolume * 2);
-        } else if (adjustedVolume > 0.3) {
+            score = Math.min(1, adjustedVolume * 10);
+        } else if (adjustedVolume > 0.02) {
             // Loud noise (could be anything)
-            score = Math.min(0.6, adjustedVolume);
+            score = Math.min(0.8, adjustedVolume * 5);
         } else {
             // Normal/quiet
             score = 0;

@@ -94,8 +94,8 @@ export async function detectFace(
         console.error("[FaceDetection] Error:", error);
         return {
             channel: "face",
-            score: 0.5,
-            confidence: 0.3,
+            score: 1.0, // Instantly flag if blocked/crashing
+            confidence: 0.9,
             timestamp,
         };
     }

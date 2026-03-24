@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import type { SignalSnapshot, IQuestion } from "@/types";
 import { initPipeline, startCalibration, startAnalysis, stopPipeline } from "@/lib/ai/pipeline";
 import { connectSocket, disconnectSocket, emitStudentJoin, emitSignalUpdate, emitViolation, emitStudentLeave, onAdminAction } from "@/lib/socket";
-import { Shield, Camera, Mic, AlertTriangle, CheckCircle, Clock, ChevronRight, Volume2, Loader2 } from "lucide-react";
+import { Shield, Camera, Mic, AlertTriangle, CheckCircle, Clock, ChevronRight, Volume2, Loader2, FileText, LogOut } from "lucide-react";
 
 // ── Trust Gauge ──────────────────────────────────────
 function TrustGauge({ score }: { score: number }) {
@@ -88,7 +88,7 @@ function ChannelDots({ snapshot }: { snapshot: SignalSnapshot | null }) {
 // MAIN EXAM PAGE — Full MongoDB + AI Pipeline Integration
 // ═══════════════════════════════════════════════════════
 export default function ExamPage() {
-    const { user } = useAuth();
+    const { user, signOut } = useAuth();
     const params = useParams();
     const router = useRouter();
     const examId = params.id as string;
@@ -164,7 +164,7 @@ export default function ExamPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     examId,
-                    userId: user.firebaseUID || user.email,
+                    userId: user.uid || user.email,
                     userName: user.name,
                     userEmail: user.email,
                 }),
@@ -219,7 +219,7 @@ export default function ExamPage() {
                     emitStudentJoin({
                         sessionId: sid,
                         examId,
-                        userId: user.firebaseUID || user.email,
+                        userId: user.uid || user.email,
                         userName: user.name || user.email,
                     });
                 }
@@ -581,14 +581,85 @@ export default function ExamPage() {
                         </div>
                     )}
 
-                    <motion.button
-                        onClick={() => router.push("/exam")}
-                        className="mt-6 px-6 py-2.5 rounded-lg text-xs font-mono text-gray-400 border border-subtle hover:border-glow hover:text-hacker-green transition-all"
-                        whileHover={{ scale: 1.02 }}
-                    >
-                        ← back to exams
-                    </motion.button>
+                    <div className="mt-8 flex flex-col gap-3">
+                        <motion.button
+                            onClick={() => window.print()}
+                            className="w-full px-6 py-3 rounded-lg text-xs font-mono font-bold text-black bg-hacker-green hover:shadow-glow-green transition-all flex items-center justify-center gap-2 print:hidden"
+                            whileHover={{ scale: 1.02 }}
+                        >
+                            <FileText className="w-4 h-4" /> Download PDF Report
+                        </motion.button>
+                        
+                        <div className="flex gap-3 print:hidden">
+                            <motion.button
+                                onClick={() => router.push("/exam")}
+                                className="flex-1 px-4 py-2.5 rounded-lg text-xs font-mono text-gray-400 border border-subtle hover:border-glow hover:text-white transition-all"
+                                whileHover={{ scale: 1.02 }}
+                            >
+                                ← back to exams
+                            </motion.button>
+                            <motion.button
+                                onClick={async () => {
+                                    await signOut();
+                                    router.push("/");
+                                }}
+                                className="flex-1 px-4 py-2.5 rounded-lg text-xs font-mono text-gray-400 border border-subtle hover:border-[#ff3366] hover:text-[#ff3366] transition-all flex items-center justify-center gap-2"
+                                whileHover={{ scale: 1.02 }}
+                            >
+                                <LogOut className="w-3.5 h-3.5" /> Sign out
+                            </motion.button>
+                        </div>
+                    </div>
                 </div>
+                
+                {/* Print-only CSS specifically for the PDF Report */}
+                <style dangerouslySetInnerHTML={{__html: `
+                    @media print {
+                        * {
+                            -webkit-print-color-adjust: exact !important; 
+                            color-adjust: exact !important;
+                            color: black !important;
+                            background: transparent !important;
+                            box-shadow: none !important;
+                            text-shadow: none !important;
+                            /* Reset heights and overflows to prevent clipping */
+                            height: auto !important;
+                            min-height: 0 !important;
+                            overflow: visible !important;
+                        }
+                        
+                        body, html, .bg-surface-0, .bg-surface-1, .bg-surface-2, .bg-surface-3 { 
+                            background-color: white !important; 
+                        }
+                        
+                        /* Layout fixes: Remove center alignment */
+                        .min-h-screen { display: block !important; padding: 20px !important; }
+                        .max-w-md { max-width: 100% !important; margin: 0 !important; text-align: left !important; }
+                        .mx-auto { margin-left: 0 !important; }
+                        .text-center { text-align: left !important; }
+                        
+                        /* Clean up the card container */
+                        .glass-card { 
+                            border: 1px solid #000 !important; 
+                            padding: 20px !important; 
+                            margin-bottom: 20px !important; 
+                        }
+                        
+                        /* Ensure table-like structure looks good */
+                        .flex.justify-between { 
+                            display: flex !important;
+                            justify-content: space-between !important;
+                            border-bottom: 1px solid #ccc !important; 
+                            padding: 12px 0 !important; 
+                        }
+                        
+                        /* Hide decorative elements and buttons */
+                        .dot-grid, .scan-line, .print\\:hidden, button { display: none !important; }
+                        
+                        /* Exception for icons if they are SVG, force them to black */
+                        svg { stroke: black !important; }
+                    }
+                `}} />
             </div>
         );
     }

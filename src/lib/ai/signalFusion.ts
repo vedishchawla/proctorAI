@@ -19,14 +19,14 @@ const WINDOW_SIZE = 10;
 const scoreHistory: number[] = [];
 
 // Minimum channels that must agree for a violation flag
-const MIN_CHANNELS_FOR_FLAG = 2;
+const MIN_CHANNELS_FOR_FLAG = 1;
 
 // Time thresholds (ms) — ignore brief anomalies
 const TIME_THRESHOLDS: Record<string, number> = {
-    gaze_away: 2000,
-    head_turned: 3000,
-    no_face: 5000,
-    audio_speech: 3000,
+    gaze_away: 1000,
+    head_turned: 1500,
+    no_face: 2000,
+    audio_speech: 1000,
 };
 
 // Track sustained anomaly durations

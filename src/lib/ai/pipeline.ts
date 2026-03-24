@@ -29,39 +29,56 @@ let calibrationData: CalibrationData | null = null;
 let isRunning = false;
 
 export async function initPipeline(config: PipelineConfig): Promise<boolean> {
+    let componentsReady = 0;
+
     try {
-        // 1. Load face-api.js models
+        // 1. Load face-api.js models (most likely to fail on some devices)
         eventBus.emit(EVENTS.PIPELINE_START, { phase: "models" });
         await loadFaceModels();
+        componentsReady++;
+    } catch (error) {
+        console.warn("⚠️ Face models failed to load - continuing without video AI:", error);
+    }
 
+    try {
         // 2. Init audio analysis
         const audioReady = initAudioAnalysis(config.mediaStream);
-        if (!audioReady) {
-            console.warn("Audio analysis unavailable — continuing without it");
+        if (audioReady) {
+            componentsReady++;
+        } else {
+            console.warn("⚠️ Audio analysis unavailable - continuing without it");
         }
+    } catch (error) {
+        console.warn("⚠️ Audio analysis threw an error:", error);
+    }
 
+    try {
         // 3. Init interaction monitor
         initInteractionMonitor();
-
-        // 4. Set up event listeners
-        if (config.onSnapshot) {
-            eventBus.on(EVENTS.SIGNAL_SNAPSHOT, config.onSnapshot as (data: unknown) => void);
-        }
-        if (config.onViolation) {
-            eventBus.on(EVENTS.VIOLATION_DETECTED, config.onViolation);
-        }
-        if (config.onTrustUpdate) {
-            eventBus.on(EVENTS.TRUST_UPDATE, config.onTrustUpdate as (data: unknown) => void);
-        }
-        if (config.onCalibrationProgress) {
-            eventBus.on(EVENTS.CALIBRATION_PROGRESS, config.onCalibrationProgress as (data: unknown) => void);
-        }
-
-        console.log("✅ Pipeline initialized — all channels ready");
-        return true;
+        componentsReady++;
     } catch (error) {
-        console.error("❌ Pipeline init failed:", error);
-        eventBus.emit(EVENTS.PIPELINE_ERROR, error);
+        console.warn("⚠️ Interaction monitor failed to init:", error);
+    }
+
+    // 4. Set up event listeners
+    if (config.onSnapshot) {
+        eventBus.on(EVENTS.SIGNAL_SNAPSHOT, config.onSnapshot as (data: unknown) => void);
+    }
+    if (config.onViolation) {
+        eventBus.on(EVENTS.VIOLATION_DETECTED, config.onViolation);
+    }
+    if (config.onTrustUpdate) {
+        eventBus.on(EVENTS.TRUST_UPDATE, config.onTrustUpdate as (data: unknown) => void);
+    }
+    if (config.onCalibrationProgress) {
+        eventBus.on(EVENTS.CALIBRATION_PROGRESS, config.onCalibrationProgress as (data: unknown) => void);
+    }
+
+    if (componentsReady > 0) {
+        console.log(`✅ Pipeline initialized gracefully (${componentsReady}/3 channels active)`);
+        return true;
+    } else {
+        console.error("❌ All AI pipeline components failed to initialize. Falling back.");
         return false;
     }
 }
