@@ -177,4 +177,4 @@ MIT
 
 ---
 
-Built by [Vedish Chawla](https://github.com/vedishchawla)
+Built with ❤️ 
