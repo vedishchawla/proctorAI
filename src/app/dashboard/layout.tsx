@@ -1,210 +1,128 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth";
-import {
-    Shield,
-    LayoutDashboard,
-    FileText,
-    Users,
-    BarChart3,
-    AlertTriangle,
-    ChevronLeft,
-    ChevronRight,
-    LogOut,
-    Bell,
-    Search,
-} from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import { LayoutDashboard, Users, FileText, Settings, LogOut, Shield, Menu, X } from "lucide-react";
 
 const navItems = [
-    { href: "/dashboard", label: "Live Monitor", icon: LayoutDashboard },
-    { href: "/dashboard/exams", label: "Exams", icon: FileText },
-    { href: "/dashboard/students", label: "Students", icon: Users },
-    { href: "/dashboard/reports", label: "Reports", icon: BarChart3 },
-    { href: "/dashboard/incidents", label: "Incidents", icon: AlertTriangle },
+    { icon: LayoutDashboard, label: "Overview", path: "/dashboard" },
+    { icon: Users, label: "Students", path: "/dashboard/students" },
+    { icon: FileText, label: "Exams", path: "/dashboard/exams" },
+    { icon: Settings, label: "Settings", path: "/dashboard/settings" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-    const [collapsed, setCollapsed] = useState(false);
-    const pathname = usePathname();
+    const { user, loading, signOut } = useAuth();
     const router = useRouter();
-    const { user, signOut } = useAuth();
+    const pathname = usePathname();
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
-    const handleSignOut = async () => {
-        await signOut();
-        router.push("/");
-    };
+    useEffect(() => {
+        if (!loading && (!user || user.role !== "admin")) {
+            router.push("/login");
+        }
+    }, [user, loading, router]);
+
+    if (loading || !user) {
+        return (
+            <div className="min-h-screen bg-surface-0 flex items-center justify-center font-mono text-xs text-gray-600">
+                <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity }}>
+                    authenticating...
+                </motion.span>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-surface-0 flex">
             {/* Sidebar */}
-            <motion.aside
-                className="fixed top-0 left-0 h-full z-40 flex flex-col border-r border-subtle"
-                animate={{ width: collapsed ? 72 : 260 }}
-                transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-                style={{ background: "rgba(6, 6, 10, 0.95)", backdropFilter: "blur(20px)" }}
-            >
+            <aside className={`fixed lg:sticky top-0 left-0 h-screen w-56 z-50 flex flex-col border-r border-subtle bg-surface-0 transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
                 {/* Logo */}
-                <div className="px-4 py-5 flex items-center gap-3 border-b border-subtle">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyber-cyan to-cyber-indigo flex items-center justify-center flex-shrink-0 shadow-glow-cyan">
-                        <Shield className="w-5 h-5 text-white" />
-                    </div>
-                    <AnimatePresence>
-                        {!collapsed && (
-                            <motion.span
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: -10 }}
-                                className="text-sm font-bold text-white tracking-tight whitespace-nowrap"
-                            >
-                                ProctorAI
-                            </motion.span>
-                        )}
-                    </AnimatePresence>
+                <div className="flex items-center justify-between px-4 py-4 border-b border-subtle">
+                    <a href="/" className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-hacker-green/10 border border-hacker-green/20 flex items-center justify-center">
+                            <span className="text-hacker-green font-mono text-[10px] font-bold">P</span>
+                        </div>
+                        <span className="text-xs font-mono font-semibold text-white">
+                            proctor<span className="text-hacker-green">AI</span>
+                        </span>
+                    </a>
+                    <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-600 hover:text-white">
+                        <X className="w-4 h-4" />
+                    </button>
                 </div>
 
-                {/* Nav Items */}
+                {/* Nav */}
                 <nav className="flex-1 px-3 py-4 space-y-1">
                     {navItems.map((item) => {
-                        const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                        const isActive = pathname === item.path;
                         return (
-                            <Link key={item.href} href={item.href}>
-                                <motion.div
-                                    className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 group cursor-pointer ${
-                                        isActive
-                                            ? "text-white"
-                                            : "text-gray-500 hover:text-gray-300"
-                                    }`}
-                                    whileHover={{ x: 2 }}
-                                >
-                                    {/* Active glow bg */}
-                                    {isActive && (
-                                        <motion.div
-                                            layoutId="activeNav"
-                                            className="absolute inset-0 rounded-xl"
-                                            style={{
-                                                background: "linear-gradient(135deg, rgba(0, 212, 255, 0.08), rgba(99, 102, 241, 0.06))",
-                                                border: "1px solid rgba(0, 212, 255, 0.12)",
-                                            }}
-                                            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-                                        />
-                                    )}
-                                    {/* Active side indicator */}
-                                    {isActive && (
-                                        <motion.div
-                                            layoutId="activeIndicator"
-                                            className="absolute -left-3 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full bg-cyber-cyan shadow-glow-cyan"
-                                            transition={{ duration: 0.3 }}
-                                        />
-                                    )}
-                                    <item.icon className={`w-[18px] h-[18px] flex-shrink-0 relative z-10 ${isActive ? "text-cyber-cyan" : "group-hover:text-cyber-cyan/60"} transition-colors duration-300`} />
-                                    <AnimatePresence>
-                                        {!collapsed && (
-                                            <motion.span
-                                                initial={{ opacity: 0 }}
-                                                animate={{ opacity: 1 }}
-                                                exit={{ opacity: 0 }}
-                                                className="relative z-10 whitespace-nowrap"
-                                            >
-                                                {item.label}
-                                            </motion.span>
-                                        )}
-                                    </AnimatePresence>
-                                </motion.div>
-                            </Link>
+                            <a
+                                key={item.path}
+                                href={item.path}
+                                className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-300 ${
+                                    isActive
+                                        ? "text-hacker-green bg-hacker-green/[0.05] border border-hacker-green/10"
+                                        : "text-gray-600 hover:text-gray-300 hover:bg-white/[0.02] border border-transparent"
+                                }`}
+                            >
+                                <item.icon className="w-3.5 h-3.5" />
+                                {item.label}
+                            </a>
                         );
                     })}
                 </nav>
 
-                {/* User & Collapse */}
-                <div className="px-3 py-4 space-y-2 border-t border-subtle">
-                    {/* User Card */}
-                    <div className="flex items-center gap-3 px-3 py-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyber-indigo to-cyber-violet flex items-center justify-center flex-shrink-0 text-xs font-bold text-white">
-                            {user?.name?.charAt(0) || "A"}
+                {/* User + Logout */}
+                <div className="px-3 py-4 border-t border-subtle space-y-2">
+                    <div className="flex items-center gap-2.5 px-3 py-2">
+                        <div className="w-6 h-6 rounded-md bg-hacker-green/10 flex items-center justify-center text-[10px] font-bold text-hacker-green">
+                            {user.name?.charAt(0) || "A"}
                         </div>
-                        <AnimatePresence>
-                            {!collapsed && (
-                                <motion.div
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    className="flex-1 min-w-0"
-                                >
-                                    <p className="text-xs font-medium text-white truncate">{user?.name || "Admin"}</p>
-                                    <p className="text-[10px] text-gray-500 truncate">{user?.email || "admin@proctai.com"}</p>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-mono text-white truncate">{user.name}</p>
+                            <p className="text-[9px] font-mono text-gray-600 truncate">{user.email}</p>
+                        </div>
                     </div>
-
-                    {/* Sign Out */}
                     <button
-                        onClick={handleSignOut}
-                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-gray-500 hover:text-rose-400 hover:bg-rose-500/5 transition-all duration-300"
+                        onClick={() => { signOut(); router.push("/"); }}
+                        className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-xs font-mono text-gray-600 hover:text-[#ff3366] hover:bg-[#ff3366]/[0.03] transition-all"
                     >
-                        <LogOut className="w-[18px] h-[18px] flex-shrink-0" />
-                        <AnimatePresence>
-                            {!collapsed && (
-                                <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                                    Sign out
-                                </motion.span>
-                            )}
-                        </AnimatePresence>
-                    </button>
-
-                    {/* Collapse Toggle */}
-                    <button
-                        onClick={() => setCollapsed(!collapsed)}
-                        className="w-full flex items-center justify-center py-2 rounded-xl text-gray-600 hover:text-gray-400 hover:bg-white/[0.02] transition-all duration-300"
-                    >
-                        {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+                        <LogOut className="w-3.5 h-3.5" />
+                        Sign out
                     </button>
                 </div>
-            </motion.aside>
+            </aside>
 
-            {/* Main Content */}
-            <motion.main
-                className="flex-1 min-h-screen"
-                animate={{ marginLeft: collapsed ? 72 : 260 }}
-                transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            >
-                {/* Top Bar */}
-                <header className="sticky top-0 z-30 h-16 flex items-center justify-between px-8 border-b border-subtle" style={{ background: "rgba(6, 6, 10, 0.8)", backdropFilter: "blur(12px)" }}>
-                    <div className="flex items-center gap-4">
-                        <h2 className="text-sm font-semibold text-white">
-                            {navItems.find((n) => pathname === n.href || (n.href !== "/dashboard" && pathname.startsWith(n.href)))?.label || "Dashboard"}
-                        </h2>
-                        <div className="status-dot live" />
+            {/* Main area */}
+            <div className="flex-1 flex flex-col min-h-screen">
+                {/* Top bar */}
+                <header className="sticky top-0 z-40 glass flex items-center justify-between px-4 py-3 border-b border-subtle">
+                    <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-gray-600 hover:text-white">
+                        <Menu className="w-4 h-4" />
+                    </button>
+                    <div className="flex items-center gap-2 font-mono text-xs text-gray-600">
+                        <Shield className="w-3.5 h-3.5 text-hacker-green" />
+                        <span>Admin Dashboard</span>
                     </div>
-
-                    <div className="flex items-center gap-3">
-                        {/* Search */}
-                        <div className="relative group">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600 group-focus-within:text-cyber-cyan transition-colors" />
-                            <input
-                                type="text"
-                                placeholder="Search..."
-                                className="w-48 pl-9 pr-4 py-2 rounded-xl bg-white/[0.03] border border-subtle text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-cyber-cyan/30 focus:bg-white/[0.05] transition-all duration-300"
-                            />
-                        </div>
-
-                        {/* Notifications */}
-                        <button className="relative p-2 rounded-xl text-gray-500 hover:text-cyber-cyan hover:bg-white/[0.03] transition-all duration-300">
-                            <Bell className="w-[18px] h-[18px]" />
-                            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.4)]" />
-                        </button>
+                    <div className="flex items-center gap-2">
+                        <div className="status-dot live" />
+                        <span className="font-mono text-[10px] text-gray-600">System Active</span>
                     </div>
                 </header>
 
-                {/* Page Content */}
-                <div className="p-8">
+                {/* Page content */}
+                <main className="flex-1 p-6 overflow-y-auto">
                     {children}
-                </div>
-            </motion.main>
+                </main>
+            </div>
+
+            {/* Mobile overlay */}
+            {sidebarOpen && (
+                <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+            )}
         </div>
     );
 }
