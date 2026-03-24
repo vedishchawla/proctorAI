@@ -546,121 +546,140 @@ export default function ExamPage() {
         const answeredCount = Object.keys(answers).length;
         const totalPoints = questions.reduce((sum, q) => sum + q.points, 0);
         return (
-            <div className="min-h-screen bg-surface-0 flex items-center justify-center relative">
-                <div className="fixed inset-0 dot-grid z-0" />
-                <div className="relative z-10 max-w-md px-6 text-center">
-                    <div className="w-12 h-12 mx-auto mb-6 rounded-xl bg-hacker-green/10 border border-hacker-green/20 flex items-center justify-center">
-                        <CheckCircle className="w-6 h-6 text-hacker-green" />
+            <>
+                {/* ── PRINT-ONLY REPORT ── */}
+                <div className="hidden print:block bg-white text-black p-10 font-sans max-w-4xl mx-auto w-full">
+                    <div className="border-b-2 border-black pb-4 mb-8">
+                        <h1 className="text-3xl font-bold mb-2">ProctorAI Session Report</h1>
+                        <p className="text-gray-600 font-mono text-sm">Generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
                     </div>
-                    <h1 className="text-xl font-display font-bold text-white mb-2">Exam Submitted</h1>
-                    <p className="text-xs text-gray-500 mb-6">Results saved to MongoDB. Session finalized.</p>
-
-                    <div className="glass-card p-5 space-y-3 text-left font-mono text-xs">
-                        <div className="flex justify-between"><span className="text-gray-500">Exam</span><span className="text-white">{examData?.title}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-500">Questions answered</span><span className="text-white">{answeredCount}/{questions.length}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-500">Total points</span><span className="text-white">{totalPoints}</span></div>
-                        <div className="flex justify-between">
-                            <span className="text-gray-500">Final trust score</span>
-                            <span className={trustScore >= 70 ? "text-hacker-green" : trustScore >= 40 ? "text-[#ffb800]" : "text-[#ff3366]"}>{trustScore}</span>
+                    
+                    <div className="grid grid-cols-2 gap-8 mb-10 text-base">
+                        <div>
+                            <h2 className="text-sm font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">Examinee Details</h2>
+                            <p className="mb-1"><span className="font-semibold w-24 inline-block">Name:</span> {user?.name || "Student"}</p>
+                            <p className="mb-1"><span className="font-semibold w-24 inline-block">Email:</span> {user?.email || "Unknown"}</p>
+                            <p className="mb-1"><span className="font-semibold w-24 inline-block">User ID:</span> <span className="font-mono text-xs">{user?.uid || "Unknown"}</span></p>
+                            <p className="mb-1 mt-4"><span className="font-semibold w-24 inline-block text-gray-500">Session:</span> <span className="font-mono text-xs bg-gray-100 px-1 rounded">{sessionId || "—"}</span></p>
                         </div>
-                        <div className="flex justify-between"><span className="text-gray-500">Violations flagged</span><span className={violations.length === 0 ? "text-hacker-green" : "text-[#ffb800]"}>{violations.length}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-500">Session ID</span><span className="text-gray-600">{sessionId?.slice(-8) || "—"}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-500">DB status</span><span className="text-hacker-green">saved ✓</span></div>
+                        <div>
+                            <h2 className="text-sm font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">Exam Summary</h2>
+                            <p className="mb-1"><span className="font-semibold w-40 inline-block">Exam Title:</span> {examData?.title}</p>
+                            <p className="mb-1"><span className="font-semibold w-40 inline-block">Questions Answered:</span> {answeredCount} / {questions.length}</p>
+                            <p className="mb-1"><span className="font-semibold w-40 inline-block">Total Points:</span> {totalPoints}</p>
+                            <p className="mb-1 mt-4"><span className="font-semibold w-40 inline-block text-gray-500">Data Saved To:</span> MongoDB Atlas ✓</p>
+                        </div>
                     </div>
-
-                    {violations.length > 0 && (
-                        <div className="glass-card p-4 mt-3 text-left">
-                            <p className="font-mono text-[9px] text-[#ffb800] mb-2">VIOLATIONS LOG</p>
-                            {violations.map((v, i) => (
-                                <div key={i} className="flex items-center gap-2 py-1 font-mono text-[10px]">
-                                    <AlertTriangle className="w-2.5 h-2.5 text-[#ffb800]" />
-                                    <span className="text-gray-500">{v.type.replace(/_/g, " ")}</span>
-                                    <span className="text-gray-700 ml-auto">{v.time}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    <div className="mt-8 flex flex-col gap-3">
-                        <motion.button
-                            onClick={() => window.print()}
-                            className="w-full px-6 py-3 rounded-lg text-xs font-mono font-bold text-black bg-hacker-green hover:shadow-glow-green transition-all flex items-center justify-center gap-2 print:hidden"
-                            whileHover={{ scale: 1.02 }}
-                        >
-                            <FileText className="w-4 h-4" /> Download PDF Report
-                        </motion.button>
+                    
+                    <div className="mb-10 text-base">
+                        <h2 className="text-sm font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">AI Integrity Metrics</h2>
                         
-                        <div className="flex gap-3 print:hidden">
+                        <div className="flex items-center gap-4 mb-6">
+                            <span className="font-semibold w-40 inline-block text-xl">Final Trust Score:</span>
+                            <span className="text-3xl font-bold font-mono px-3 py-1 bg-gray-100 border border-gray-300 rounded">{trustScore} / 100</span>
+                        </div>
+                        
+                        <div className="flex flex-col gap-2">
+                            <span className="font-semibold inline-block text-lg mb-2">Violations Logged: {violations.length}</span>
+                            {violations.length === 0 ? (
+                                <p className="italic text-gray-600 bg-gray-50 p-4 rounded border border-gray-200">No suspicious activity or anomalies detected during this session.</p>
+                            ) : (
+                                <table className="w-full text-left border-collapse mt-2 text-sm">
+                                    <thead>
+                                        <tr className="bg-gray-100">
+                                            <th className="p-3 border border-gray-300 font-semibold w-1/4">Timestamp</th>
+                                            <th className="p-3 border border-gray-300 font-semibold w-1/2">Violation Type</th>
+                                            <th className="p-3 border border-gray-300 font-semibold w-1/4">Severity</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {violations.map((v, i) => (
+                                            <tr key={i}>
+                                                <td className="p-3 border border-gray-300 font-mono">{v.time}</td>
+                                                <td className="p-3 border border-gray-300 font-bold uppercase">{v.type.replace(/_/g, " ")}</td>
+                                                <td className="p-3 border border-gray-300 font-bold uppercase">{v.severity}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                    
+                    <div className="mt-16 pt-8 border-t border-gray-300 text-center text-xs text-gray-500">
+                        <p>This report was automatically generated by the ProctorAI Behavioral Analysis Engine.</p>
+                        <p>Secure session logs are preserved in database.</p>
+                    </div>
+                </div>
+
+                {/* ── WEB UI (Hidden during print) ── */}
+                <div className="min-h-screen bg-surface-0 flex items-center justify-center relative print:hidden">
+                    <div className="fixed inset-0 dot-grid z-0" />
+                    <div className="relative z-10 max-w-md px-6 text-center w-full">
+                        <div className="w-12 h-12 mx-auto mb-6 rounded-xl bg-hacker-green/10 border border-hacker-green/20 flex items-center justify-center">
+                            <CheckCircle className="w-6 h-6 text-hacker-green" />
+                        </div>
+                        <h1 className="text-xl font-display font-bold text-white mb-2">Exam Submitted</h1>
+                        <p className="text-xs text-gray-500 mb-6">Results saved to MongoDB. Session finalized.</p>
+
+                        <div className="glass-card p-5 space-y-3 text-left font-mono text-xs">
+                            <div className="flex justify-between"><span className="text-gray-500">Exam</span><span className="text-white">{examData?.title}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-500">Questions answered</span><span className="text-white">{answeredCount}/{questions.length}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-500">Total points</span><span className="text-white">{totalPoints}</span></div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-500">Final trust score</span>
+                                <span className={trustScore >= 70 ? "text-hacker-green" : trustScore >= 40 ? "text-[#ffb800]" : "text-[#ff3366]"}>{trustScore}</span>
+                            </div>
+                            <div className="flex justify-between"><span className="text-gray-500">Violations flagged</span><span className={violations.length === 0 ? "text-hacker-green" : "text-[#ffb800]"}>{violations.length}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-500">Session ID</span><span className="text-gray-600">{sessionId?.slice(-8) || "—"}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-500">DB status</span><span className="text-hacker-green">saved ✓</span></div>
+                        </div>
+
+                        {violations.length > 0 && (
+                            <div className="glass-card p-4 mt-3 text-left">
+                                <p className="font-mono text-[9px] text-[#ffb800] mb-2">VIOLATIONS LOG</p>
+                                {violations.map((v, i) => (
+                                    <div key={i} className="flex items-center gap-2 py-1 font-mono text-[10px]">
+                                        <AlertTriangle className="w-2.5 h-2.5 text-[#ffb800]" />
+                                        <span className="text-gray-500">{v.type.replace(/_/g, " ")}</span>
+                                        <span className="text-gray-700 ml-auto">{v.time}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="mt-8 flex flex-col gap-3">
                             <motion.button
-                                onClick={() => router.push("/exam")}
-                                className="flex-1 px-4 py-2.5 rounded-lg text-xs font-mono text-gray-400 border border-subtle hover:border-glow hover:text-white transition-all"
+                                onClick={() => window.print()}
+                                className="w-full px-6 py-3 rounded-lg text-xs font-mono font-bold text-black bg-hacker-green hover:shadow-glow-green transition-all flex items-center justify-center gap-2"
                                 whileHover={{ scale: 1.02 }}
                             >
-                                ← back to exams
+                                <FileText className="w-4 h-4" /> Download PDF Report
                             </motion.button>
-                            <motion.button
-                                onClick={async () => {
-                                    await signOut();
-                                    router.push("/");
-                                }}
-                                className="flex-1 px-4 py-2.5 rounded-lg text-xs font-mono text-gray-400 border border-subtle hover:border-[#ff3366] hover:text-[#ff3366] transition-all flex items-center justify-center gap-2"
-                                whileHover={{ scale: 1.02 }}
-                            >
-                                <LogOut className="w-3.5 h-3.5" /> Sign out
-                            </motion.button>
+                            
+                            <div className="flex gap-3">
+                                <motion.button
+                                    onClick={() => router.push("/exam")}
+                                    className="flex-1 px-4 py-2.5 rounded-lg text-xs font-mono text-gray-400 border border-subtle hover:border-glow hover:text-white transition-all"
+                                    whileHover={{ scale: 1.02 }}
+                                >
+                                    ← back to exams
+                                </motion.button>
+                                <motion.button
+                                    onClick={async () => {
+                                        await signOut();
+                                        router.push("/");
+                                    }}
+                                    className="flex-1 px-4 py-2.5 rounded-lg text-xs font-mono text-gray-400 border border-subtle hover:border-[#ff3366] hover:text-[#ff3366] transition-all flex items-center justify-center gap-2"
+                                    whileHover={{ scale: 1.02 }}
+                                >
+                                    <LogOut className="w-3.5 h-3.5" /> Sign out
+                                </motion.button>
+                            </div>
                         </div>
                     </div>
                 </div>
-                
-                {/* Print-only CSS specifically for the PDF Report */}
-                <style dangerouslySetInnerHTML={{__html: `
-                    @media print {
-                        * {
-                            -webkit-print-color-adjust: exact !important; 
-                            color-adjust: exact !important;
-                            color: black !important;
-                            background: transparent !important;
-                            box-shadow: none !important;
-                            text-shadow: none !important;
-                            /* Reset heights and overflows to prevent clipping */
-                            height: auto !important;
-                            min-height: 0 !important;
-                            overflow: visible !important;
-                        }
-                        
-                        body, html, .bg-surface-0, .bg-surface-1, .bg-surface-2, .bg-surface-3 { 
-                            background-color: white !important; 
-                        }
-                        
-                        /* Layout fixes: Remove center alignment */
-                        .min-h-screen { display: block !important; padding: 20px !important; }
-                        .max-w-md { max-width: 100% !important; margin: 0 !important; text-align: left !important; }
-                        .mx-auto { margin-left: 0 !important; }
-                        .text-center { text-align: left !important; }
-                        
-                        /* Clean up the card container */
-                        .glass-card { 
-                            border: 1px solid #000 !important; 
-                            padding: 20px !important; 
-                            margin-bottom: 20px !important; 
-                        }
-                        
-                        /* Ensure table-like structure looks good */
-                        .flex.justify-between { 
-                            display: flex !important;
-                            justify-content: space-between !important;
-                            border-bottom: 1px solid #ccc !important; 
-                            padding: 12px 0 !important; 
-                        }
-                        
-                        /* Hide decorative elements and buttons */
-                        .dot-grid, .scan-line, .print\\:hidden, button { display: none !important; }
-                        
-                        /* Exception for icons if they are SVG, force them to black */
-                        svg { stroke: black !important; }
-                    }
-                `}} />
-            </div>
+            </>
         );
     }
 
