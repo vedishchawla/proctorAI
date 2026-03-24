@@ -368,6 +368,14 @@ export default function ExamPage() {
         return () => clearInterval(timer);
     }, [phase]);
 
+    // ── KEEP VIDEO STREAM SYNCED (React destroys/recreates the <video> tag on phase change) ──
+    useEffect(() => {
+        if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+            videoRef.current.play().catch(console.error);
+        }
+    }, [phase]);
+
     // ── Cleanup ──
     useEffect(() => {
         return () => {
