@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:socket": "npx ts-node --skip-project server.ts",
+    "dev:socket": "node server.js",
     "dev:full": "npx concurrently \"npm run dev\" \"npm run dev:socket\"",
     "build": "next build",
     "start": "next start",

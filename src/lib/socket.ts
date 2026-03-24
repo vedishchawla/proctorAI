@@ -6,7 +6,7 @@
 import { io, Socket } from "socket.io-client";
 import type { SignalSnapshot, AdminAction } from "@/types";
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3002";
 
 let socket: Socket | null = null;
 
