@@ -1,14 +1,30 @@
 import mongoose, { Schema, Document } from "mongoose";
-import type { IExam, IQuestion, IExamSettings } from "@/types";
+import type { IExam, IQuestion, IExamSettings, ITestCase } from "@/types";
 
 export interface ExamDocument extends Omit<IExam, "_id">, Document {}
+
+const TestCaseSchema = new Schema<ITestCase>(
+    {
+        input: { type: String, required: true },
+        expectedOutput: { type: String, required: true },
+        isHidden: { type: Boolean, default: false },
+    },
+    { _id: false }
+);
 
 const QuestionSchema = new Schema<IQuestion>(
     {
         id: { type: String, required: true },
         text: { type: String, required: true },
-        options: [{ type: String, required: true }],
-        correctAnswer: { type: Number, required: true },
+        type: { type: String, enum: ["mcq", "coding"], default: "mcq" },
+        // MCQ fields
+        options: [{ type: String }],
+        correctAnswer: { type: Number },
+        // Coding fields
+        starterCode: { type: Schema.Types.Mixed },
+        testCases: [TestCaseSchema],
+        languages: [{ type: String }],
+        // Common
         points: { type: Number, default: 1 },
     },
     { _id: false }

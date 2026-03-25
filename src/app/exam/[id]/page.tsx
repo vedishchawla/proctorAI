@@ -2,93 +2,33 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import dynamic from "next/dynamic";
 import { useAuth } from "@/lib/auth";
 import { useParams, useRouter } from "next/navigation";
 import type { SignalSnapshot, IQuestion } from "@/types";
 import { initPipeline, startCalibration, startAnalysis, stopPipeline } from "@/lib/ai/pipeline";
 import { connectSocket, disconnectSocket, emitStudentJoin, emitSignalUpdate, emitViolation, emitStudentLeave, onAdminAction } from "@/lib/socket";
-import { Shield, Camera, Mic, AlertTriangle, CheckCircle, Clock, ChevronRight, Volume2, Loader2, FileText, LogOut } from "lucide-react";
+import ProctorOverlay from "@/components/ProctorOverlay";
+import { Shield, Camera, Mic, AlertTriangle, CheckCircle, Clock, ChevronRight, Loader2, Code2, FileText } from "lucide-react";
 
-// ── Trust Gauge ──────────────────────────────────────
-function TrustGauge({ score }: { score: number }) {
-    const radius = 42;
-    const circumference = 2 * Math.PI * radius;
-    const offset = circumference - (score / 100) * circumference;
-    const color = score >= 70 ? "#00ff88" : score >= 40 ? "#ffb800" : "#ff3366";
-    return (
-        <div className="relative w-[100px] h-[100px]">
-            <svg width={100} height={100} className="-rotate-90">
-                <circle cx={50} cy={50} r={radius} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="5" />
-                <motion.circle cx={50} cy={50} r={radius} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round"
-                    strokeDasharray={circumference} animate={{ strokeDashoffset: offset }}
-                    transition={{ duration: 0.8, ease: "easeOut" }}
-                    style={{ filter: `drop-shadow(0 0 8px ${color}40)` }} />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-xl font-bold font-mono" style={{ color }}>{score}</span>
-                <span className="text-[8px] text-gray-600 font-mono">TRUST</span>
+// Dynamic import for Monaco (heavy component)
+const CodeEditor = dynamic(() => import("@/components/CodeEditor"), {
+    ssr: false,
+    loading: () => (
+        <div className="flex-1 flex items-center justify-center bg-[#1e1e1e] rounded-xl border border-subtle">
+            <div className="text-center">
+                <Loader2 className="w-5 h-5 text-hacker-green mx-auto mb-2 animate-spin" />
+                <p className="font-mono text-xs text-gray-600">Loading code editor...</p>
             </div>
         </div>
-    );
-}
-
-// ── Audio Meter ──────────────────────────────────────
-function AudioMeter({ level }: { level: number }) {
-    const bars = 8;
-    return (
-        <div className="flex items-end gap-[2px] h-6">
-            {Array.from({ length: bars }).map((_, i) => {
-                const threshold = (i + 1) / bars;
-                const active = level >= threshold;
-                return (
-                    <div key={i} className="w-1 rounded-full transition-all duration-150"
-                        style={{
-                            height: `${((i + 1) / bars) * 100}%`,
-                            backgroundColor: active
-                                ? i < 5 ? "rgba(0,255,136,0.6)" : i < 7 ? "rgba(255,184,0,0.6)" : "rgba(255,51,102,0.6)"
-                                : "rgba(255,255,255,0.06)",
-                        }} />
-                );
-            })}
-        </div>
-    );
-}
-
-// ── Channel Status ──────────────────────────────────
-function ChannelDots({ snapshot }: { snapshot: SignalSnapshot | null }) {
-    const channels = [
-        { key: "face", label: "FACE", score: snapshot?.face.score ?? 0, conf: snapshot?.face.confidence ?? 0 },
-        { key: "gaze", label: "GAZE", score: snapshot?.gaze.score ?? 0, conf: snapshot?.gaze.confidence ?? 0 },
-        { key: "head", label: "HEAD", score: snapshot?.headPose.score ?? 0, conf: snapshot?.headPose.confidence ?? 0 },
-        { key: "audio", label: "AUDIO", score: snapshot?.audio.score ?? 0, conf: snapshot?.audio.confidence ?? 0 },
-        { key: "input", label: "INPUT", score: snapshot?.interaction.score ?? 0, conf: snapshot?.interaction.confidence ?? 0 },
-    ];
-    return (
-        <div className="space-y-1.5">
-            {channels.map((ch) => {
-                const color = ch.score < 0.3 ? "bg-hacker-green" : ch.score < 0.6 ? "bg-[#ffb800]" : "bg-[#ff3366]";
-                const glow = ch.score < 0.3 ? "shadow-glow-green" : "";
-                return (
-                    <div key={ch.key} className="flex items-center gap-2 font-mono text-[10px]">
-                        <div className={`w-1.5 h-1.5 rounded-full ${color} ${glow}`} />
-                        <span className="text-gray-600 w-10">{ch.label}</span>
-                        <span className="text-gray-500 w-8">{ch.score.toFixed(2)}</span>
-                        <div className="flex-1 h-[3px] bg-surface-3 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full transition-all duration-500"
-                                style={{ width: `${ch.conf * 100}%`, backgroundColor: ch.score < 0.3 ? "#00ff88" : ch.score < 0.6 ? "#ffb800" : "#ff3366", opacity: 0.5 }} />
-                        </div>
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
+    ),
+});
 
 // ═══════════════════════════════════════════════════════
-// MAIN EXAM PAGE — Full MongoDB + AI Pipeline Integration
+// MAIN EXAM PAGE — Full MongoDB + AI Pipeline + Code Editor
 // ═══════════════════════════════════════════════════════
 export default function ExamPage() {
-    const { user, signOut } = useAuth();
+    const { user } = useAuth();
     const params = useParams();
     const router = useRouter();
     const examId = params.id as string;
@@ -107,19 +47,32 @@ export default function ExamPage() {
     const [calibrationProgress, setCalibrationProgress] = useState(0);
     const [trustScore, setTrustScore] = useState(100);
     const [snapshot, setSnapshot] = useState<SignalSnapshot | null>(null);
-    const [audioLevel, setAudioLevel] = useState(0);
     const [currentQuestion, setCurrentQuestion] = useState(0);
     const [answers, setAnswers] = useState<Record<number, number>>({});
+    const [codeAnswers, setCodeAnswers] = useState<Record<number, { code: string; language: string }>>({});
     const [timeLeft, setTimeLeft] = useState(3600);
     const [violations, setViolations] = useState<Array<{ type: string; time: string; severity: string }>>([]);
     const [warningVisible, setWarningVisible] = useState(false);
     const [warningText, setWarningText] = useState("");
     const [pipelineReady, setPipelineReady] = useState(false);
     const [socketConnected, setSocketConnected] = useState(false);
+    const [proctorCompact, setProctorCompact] = useState(false);
     const streamRef = useRef<MediaStream | null>(null);
     const trustSyncRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const signalThrottleRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const latestSnapshotRef = useRef<SignalSnapshot | null>(null);
+
+    // Determine if current question is coding type
+    const questions = examData?.questions || [];
+    const currentQ = questions[currentQuestion];
+    const isCodingQuestion = currentQ?.type === "coding";
+
+    // Auto-switch to compact proctor when coding question
+    useEffect(() => {
+        if (phase === "active" && isCodingQuestion) {
+            setProctorCompact(true);
+        }
+    }, [currentQuestion, phase, isCodingQuestion]);
 
     // ── 1. FETCH EXAM FROM MONGODB ──
     useEffect(() => {
@@ -164,7 +117,7 @@ export default function ExamPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     examId,
-                    userId: user.uid || user.email,
+                    userId: user.firebaseUID || user.email,
                     userName: user.name,
                     userEmail: user.email,
                 }),
@@ -219,7 +172,7 @@ export default function ExamPage() {
                     emitStudentJoin({
                         sessionId: sid,
                         examId,
-                        userId: user.uid || user.email,
+                        userId: user.firebaseUID || user.email,
                         userName: user.name || user.email,
                     });
                 }
@@ -244,9 +197,6 @@ export default function ExamPage() {
                     setSnapshot(snap);
                     setTrustScore(snap.trustScore);
                     latestSnapshotRef.current = snap;
-                    if (snap.audio.rawData?.volume !== undefined) {
-                        setAudioLevel(snap.audio.rawData.volume as number);
-                    }
                 },
                 onViolation: (v: unknown) => {
                     const violation = v as { type: string; severity: string; description: string };
@@ -275,7 +225,6 @@ export default function ExamPage() {
                             }),
                         }).catch(() => {});
 
-                        // Real-time violation to admin via Socket.IO
                         emitViolation({
                             sessionId: sid,
                             type: violation.type,
@@ -311,7 +260,6 @@ export default function ExamPage() {
                 setPhase("active");
                 startAnalysis(videoRef.current);
 
-                // Update session to active + start trust sync + socket signal streaming
                 if (sid) {
                     fetch(`/api/sessions/${sid}`, {
                         method: "PATCH",
@@ -350,7 +298,7 @@ export default function ExamPage() {
         } catch {
             alert("Camera and microphone access are required for the proctored exam.");
         }
-    }, [createSession, startTrustSync]);
+    }, [createSession, startTrustSync, examId, user]);
 
     // ── Timer ──
     useEffect(() => {
@@ -366,14 +314,7 @@ export default function ExamPage() {
             });
         }, 1000);
         return () => clearInterval(timer);
-    }, [phase]);
-
-    // ── KEEP VIDEO STREAM SYNCED (React destroys/recreates the <video> tag on phase change) ──
-    useEffect(() => {
-        if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
-            videoRef.current.srcObject = streamRef.current;
-            videoRef.current.play().catch(console.error);
-        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [phase]);
 
     // ── Cleanup ──
@@ -386,6 +327,7 @@ export default function ExamPage() {
             if (sessionId) emitStudentLeave(sessionId);
             disconnectSocket();
         };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const formatTime = (s: number) => {
@@ -412,7 +354,7 @@ export default function ExamPage() {
                     body: JSON.stringify({
                         status: "completed",
                         trustScore,
-                        answers,
+                        answers: { ...answers, ...codeAnswers },
                         endTime: new Date().toISOString(),
                         totalViolations: violations.length,
                     }),
@@ -425,9 +367,7 @@ export default function ExamPage() {
         setPhase("completed");
     };
 
-    const questions = examData?.questions || [];
-
-    // ══ LOADING PHASE — fetching exam from DB ══
+    // ══ LOADING PHASE ══
     if (phase === "loading" || examLoading) {
         return (
             <div className="min-h-screen bg-surface-0 flex items-center justify-center relative">
@@ -466,6 +406,7 @@ export default function ExamPage() {
 
     // ══ PERMISSIONS PHASE ══
     if (phase === "permissions") {
+        const hasCoding = questions.some((q) => q.type === "coding");
         return (
             <div className="min-h-screen bg-surface-0 flex items-center justify-center relative">
                 <div className="fixed inset-0 dot-grid z-0" />
@@ -481,6 +422,7 @@ export default function ExamPage() {
                             { icon: Camera, label: "Camera — face detection, gaze tracking, head pose estimation" },
                             { icon: Mic, label: "Microphone — speech detection via FFT analysis" },
                             { icon: Shield, label: "All AI runs in-browser — zero data uploaded to cloud" },
+                            ...(hasCoding ? [{ icon: Code2, label: "Code editor with syntax highlighting & test runner" }] : []),
                         ].map((item, i) => (
                             <div key={i} className="flex items-center gap-3">
                                 <item.icon className="w-4 h-4 text-hacker-green flex-shrink-0" />
@@ -495,8 +437,14 @@ export default function ExamPage() {
                             <div className="flex justify-between"><span className="text-gray-600">Questions</span><span className="text-white">{questions.length}</span></div>
                             <div className="flex justify-between"><span className="text-gray-600">Duration</span><span className="text-white">{examData?.duration} min</span></div>
                             <div className="flex justify-between"><span className="text-gray-600">Total Points</span><span className="text-white">{questions.reduce((s, q) => s + q.points, 0)}</span></div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Question Types</span>
+                                <span className="text-white">
+                                    {questions.filter((q) => q.type === "mcq" || !q.type).length} MCQ
+                                    {hasCoding && `, ${questions.filter((q) => q.type === "coding").length} Coding`}
+                                </span>
+                            </div>
                             <div className="flex justify-between"><span className="text-gray-600">Calibration</span><span className="text-white">30 sec</span></div>
-                            <div className="flex justify-between"><span className="text-gray-600">Exam ID</span><span className="text-gray-500">{examId.slice(-8)}</span></div>
                         </div>
                     </div>
 
@@ -551,143 +499,55 @@ export default function ExamPage() {
 
     // ══ COMPLETED PHASE ══
     if (phase === "completed") {
-        const answeredCount = Object.keys(answers).length;
+        const answeredMCQ = Object.keys(answers).length;
+        const answeredCode = Object.keys(codeAnswers).length;
         const totalPoints = questions.reduce((sum, q) => sum + q.points, 0);
         return (
-            <>
-                {/* ── PRINT-ONLY REPORT ── */}
-                <div className="hidden print:block bg-white text-black p-10 font-sans max-w-4xl mx-auto w-full">
-                    <div className="border-b-2 border-black pb-4 mb-8">
-                        <h1 className="text-3xl font-bold mb-2">ProctorAI Session Report</h1>
-                        <p className="text-gray-600 font-mono text-sm">Generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
+            <div className="min-h-screen bg-surface-0 flex items-center justify-center relative">
+                <div className="fixed inset-0 dot-grid z-0" />
+                <div className="relative z-10 max-w-md px-6 text-center">
+                    <div className="w-12 h-12 mx-auto mb-6 rounded-xl bg-hacker-green/10 border border-hacker-green/20 flex items-center justify-center">
+                        <CheckCircle className="w-6 h-6 text-hacker-green" />
                     </div>
-                    
-                    <div className="grid grid-cols-2 gap-8 mb-10 text-base">
-                        <div>
-                            <h2 className="text-sm font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">Examinee Details</h2>
-                            <p className="mb-1"><span className="font-semibold w-24 inline-block">Name:</span> {user?.name || "Student"}</p>
-                            <p className="mb-1"><span className="font-semibold w-24 inline-block">Email:</span> {user?.email || "Unknown"}</p>
-                            <p className="mb-1"><span className="font-semibold w-24 inline-block">User ID:</span> <span className="font-mono text-xs">{user?.uid || "Unknown"}</span></p>
-                            <p className="mb-1 mt-4"><span className="font-semibold w-24 inline-block text-gray-500">Session:</span> <span className="font-mono text-xs bg-gray-100 px-1 rounded">{sessionId || "—"}</span></p>
+                    <h1 className="text-xl font-display font-bold text-white mb-2">Exam Submitted</h1>
+                    <p className="text-xs text-gray-500 mb-6">Results saved to MongoDB. Session finalized.</p>
+
+                    <div className="glass-card p-5 space-y-3 text-left font-mono text-xs">
+                        <div className="flex justify-between"><span className="text-gray-500">Exam</span><span className="text-white">{examData?.title}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">MCQ answered</span><span className="text-white">{answeredMCQ}/{questions.filter((q) => q.type !== "coding").length}</span></div>
+                        {answeredCode > 0 && <div className="flex justify-between"><span className="text-gray-500">Code submitted</span><span className="text-white">{answeredCode}/{questions.filter((q) => q.type === "coding").length}</span></div>}
+                        <div className="flex justify-between"><span className="text-gray-500">Total points</span><span className="text-white">{totalPoints}</span></div>
+                        <div className="flex justify-between">
+                            <span className="text-gray-500">Final trust score</span>
+                            <span className={trustScore >= 70 ? "text-hacker-green" : trustScore >= 40 ? "text-[#ffb800]" : "text-[#ff3366]"}>{trustScore}</span>
                         </div>
-                        <div>
-                            <h2 className="text-sm font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">Exam Summary</h2>
-                            <p className="mb-1"><span className="font-semibold w-40 inline-block">Exam Title:</span> {examData?.title}</p>
-                            <p className="mb-1"><span className="font-semibold w-40 inline-block">Questions Answered:</span> {answeredCount} / {questions.length}</p>
-                            <p className="mb-1"><span className="font-semibold w-40 inline-block">Total Points:</span> {totalPoints}</p>
-                            <p className="mb-1 mt-4"><span className="font-semibold w-40 inline-block text-gray-500">Data Saved To:</span> MongoDB Atlas ✓</p>
-                        </div>
+                        <div className="flex justify-between"><span className="text-gray-500">Violations flagged</span><span className={violations.length === 0 ? "text-hacker-green" : "text-[#ffb800]"}>{violations.length}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">Session ID</span><span className="text-gray-600">{sessionId?.slice(-8) || "—"}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-500">DB status</span><span className="text-hacker-green">saved ✓</span></div>
                     </div>
-                    
-                    <div className="mb-10 text-base">
-                        <h2 className="text-sm font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">AI Integrity Metrics</h2>
-                        
-                        <div className="flex items-center gap-4 mb-6">
-                            <span className="font-semibold w-40 inline-block text-xl">Final Trust Score:</span>
-                            <span className="text-3xl font-bold font-mono px-3 py-1 bg-gray-100 border border-gray-300 rounded">{trustScore} / 100</span>
+
+                    {violations.length > 0 && (
+                        <div className="glass-card p-4 mt-3 text-left">
+                            <p className="font-mono text-[9px] text-[#ffb800] mb-2">VIOLATIONS LOG</p>
+                            {violations.map((v, i) => (
+                                <div key={i} className="flex items-center gap-2 py-1 font-mono text-[10px]">
+                                    <AlertTriangle className="w-2.5 h-2.5 text-[#ffb800]" />
+                                    <span className="text-gray-500">{v.type.replace(/_/g, " ")}</span>
+                                    <span className="text-gray-700 ml-auto">{v.time}</span>
+                                </div>
+                            ))}
                         </div>
-                        
-                        <div className="flex flex-col gap-2">
-                            <span className="font-semibold inline-block text-lg mb-2">Violations Logged: {violations.length}</span>
-                            {violations.length === 0 ? (
-                                <p className="italic text-gray-600 bg-gray-50 p-4 rounded border border-gray-200">No suspicious activity or anomalies detected during this session.</p>
-                            ) : (
-                                <table className="w-full text-left border-collapse mt-2 text-sm">
-                                    <thead>
-                                        <tr className="bg-gray-100">
-                                            <th className="p-3 border border-gray-300 font-semibold w-1/4">Timestamp</th>
-                                            <th className="p-3 border border-gray-300 font-semibold w-1/2">Violation Type</th>
-                                            <th className="p-3 border border-gray-300 font-semibold w-1/4">Severity</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {violations.map((v, i) => (
-                                            <tr key={i}>
-                                                <td className="p-3 border border-gray-300 font-mono">{v.time}</td>
-                                                <td className="p-3 border border-gray-300 font-bold uppercase">{v.type.replace(/_/g, " ")}</td>
-                                                <td className="p-3 border border-gray-300 font-bold uppercase">{v.severity}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
-                    </div>
-                    
-                    <div className="mt-16 pt-8 border-t border-gray-300 text-center text-xs text-gray-500">
-                        <p>This report was automatically generated by the ProctorAI Behavioral Analysis Engine.</p>
-                        <p>Secure session logs are preserved in database.</p>
-                    </div>
+                    )}
+
+                    <motion.button
+                        onClick={() => router.push("/exam")}
+                        className="mt-6 px-6 py-2.5 rounded-lg text-xs font-mono text-gray-400 border border-subtle hover:border-glow hover:text-hacker-green transition-all"
+                        whileHover={{ scale: 1.02 }}
+                    >
+                        ← back to exams
+                    </motion.button>
                 </div>
-
-                {/* ── WEB UI (Hidden during print) ── */}
-                <div className="min-h-screen bg-surface-0 flex items-center justify-center relative print:hidden">
-                    <div className="fixed inset-0 dot-grid z-0" />
-                    <div className="relative z-10 max-w-md px-6 text-center w-full">
-                        <div className="w-12 h-12 mx-auto mb-6 rounded-xl bg-hacker-green/10 border border-hacker-green/20 flex items-center justify-center">
-                            <CheckCircle className="w-6 h-6 text-hacker-green" />
-                        </div>
-                        <h1 className="text-xl font-display font-bold text-white mb-2">Exam Submitted</h1>
-                        <p className="text-xs text-gray-500 mb-6">Results saved to MongoDB. Session finalized.</p>
-
-                        <div className="glass-card p-5 space-y-3 text-left font-mono text-xs">
-                            <div className="flex justify-between"><span className="text-gray-500">Exam</span><span className="text-white">{examData?.title}</span></div>
-                            <div className="flex justify-between"><span className="text-gray-500">Questions answered</span><span className="text-white">{answeredCount}/{questions.length}</span></div>
-                            <div className="flex justify-between"><span className="text-gray-500">Total points</span><span className="text-white">{totalPoints}</span></div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-500">Final trust score</span>
-                                <span className={trustScore >= 70 ? "text-hacker-green" : trustScore >= 40 ? "text-[#ffb800]" : "text-[#ff3366]"}>{trustScore}</span>
-                            </div>
-                            <div className="flex justify-between"><span className="text-gray-500">Violations flagged</span><span className={violations.length === 0 ? "text-hacker-green" : "text-[#ffb800]"}>{violations.length}</span></div>
-                            <div className="flex justify-between"><span className="text-gray-500">Session ID</span><span className="text-gray-600">{sessionId?.slice(-8) || "—"}</span></div>
-                            <div className="flex justify-between"><span className="text-gray-500">DB status</span><span className="text-hacker-green">saved ✓</span></div>
-                        </div>
-
-                        {violations.length > 0 && (
-                            <div className="glass-card p-4 mt-3 text-left">
-                                <p className="font-mono text-[9px] text-[#ffb800] mb-2">VIOLATIONS LOG</p>
-                                {violations.map((v, i) => (
-                                    <div key={i} className="flex items-center gap-2 py-1 font-mono text-[10px]">
-                                        <AlertTriangle className="w-2.5 h-2.5 text-[#ffb800]" />
-                                        <span className="text-gray-500">{v.type.replace(/_/g, " ")}</span>
-                                        <span className="text-gray-700 ml-auto">{v.time}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        <div className="mt-8 flex flex-col gap-3">
-                            <motion.button
-                                onClick={() => window.print()}
-                                className="w-full px-6 py-3 rounded-lg text-xs font-mono font-bold text-black bg-hacker-green hover:shadow-glow-green transition-all flex items-center justify-center gap-2"
-                                whileHover={{ scale: 1.02 }}
-                            >
-                                <FileText className="w-4 h-4" /> Download PDF Report
-                            </motion.button>
-                            
-                            <div className="flex gap-3">
-                                <motion.button
-                                    onClick={() => router.push("/exam")}
-                                    className="flex-1 px-4 py-2.5 rounded-lg text-xs font-mono text-gray-400 border border-subtle hover:border-glow hover:text-white transition-all"
-                                    whileHover={{ scale: 1.02 }}
-                                >
-                                    ← back to exams
-                                </motion.button>
-                                <motion.button
-                                    onClick={async () => {
-                                        await signOut();
-                                        router.push("/");
-                                    }}
-                                    className="flex-1 px-4 py-2.5 rounded-lg text-xs font-mono text-gray-400 border border-subtle hover:border-[#ff3366] hover:text-[#ff3366] transition-all flex items-center justify-center gap-2"
-                                    whileHover={{ scale: 1.02 }}
-                                >
-                                    <LogOut className="w-3.5 h-3.5" /> Sign out
-                                </motion.button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </>
+            </div>
         );
     }
 
@@ -701,7 +561,16 @@ export default function ExamPage() {
                         <span className="text-hacker-green font-mono text-[10px] font-bold">P</span>
                     </div>
                     <span className="font-mono text-xs text-gray-500">Q{currentQuestion + 1}/{questions.length}</span>
-                    <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-surface-2 text-gray-600">{examData?.title}</span>
+                    {isCodingQuestion ? (
+                        <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6] border border-[#8b5cf6]/20 flex items-center gap-1">
+                            <Code2 className="w-2.5 h-2.5" /> CODING
+                        </span>
+                    ) : (
+                        <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-surface-2 text-gray-600 flex items-center gap-1">
+                            <FileText className="w-2.5 h-2.5" /> MCQ
+                        </span>
+                    )}
+                    <span className="font-mono text-[10px] text-gray-700 hidden md:inline">{examData?.title}</span>
                 </div>
 
                 <div className={`flex items-center gap-1.5 font-mono text-sm font-bold ${timeLeft < 300 ? "text-[#ff3366]" : "text-white"}`}>
@@ -711,13 +580,9 @@ export default function ExamPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5">
+                    <div className="hidden md:flex items-center gap-1.5">
                         <div className={`w-1.5 h-1.5 rounded-full ${pipelineReady ? "bg-hacker-green" : "bg-[#ffb800]"}`} />
                         <span className="font-mono text-[9px] text-gray-600">{pipelineReady ? "AI active" : "AI loading"}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <div className={`w-1.5 h-1.5 rounded-full ${sessionId ? "bg-hacker-green" : "bg-[#ffb800]"}`} />
-                        <span className="font-mono text-[9px] text-gray-600">{sessionId ? "DB synced" : "DB pending"}</span>
                     </div>
                     <motion.button
                         onClick={submitExam}
@@ -730,131 +595,162 @@ export default function ExamPage() {
                 </div>
             </header>
 
-            {/* 3-panel layout */}
-            <div className="flex-1 flex">
-                {/* Left — Questions from DB */}
-                <div className="flex-1 p-6 overflow-y-auto">
-                    <div className="max-w-xl">
-                        <div className="flex items-center gap-3 mb-1">
-                            <span className="section-label">question {currentQuestion + 1}</span>
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-hacker-green/10 text-hacker-green">{questions[currentQuestion]?.points} pts</span>
-                        </div>
-                        <h2 className="text-base font-display font-semibold text-white mt-2 mb-6 leading-relaxed">
-                            {questions[currentQuestion]?.text}
-                        </h2>
-
-                        <div className="space-y-2">
-                            {questions[currentQuestion]?.options.map((opt, i) => (
-                                <motion.button
-                                    key={i}
-                                    onClick={() => setAnswers({ ...answers, [currentQuestion]: i })}
-                                    className={`w-full text-left glass-card p-4 text-sm transition-all duration-300 ${
-                                        answers[currentQuestion] === i
-                                            ? "border-hacker-green/30 bg-hacker-green/[0.03] text-white"
-                                            : "text-gray-400 hover:text-gray-200"
-                                    }`}
-                                    whileHover={{ x: 3 }}
-                                >
-                                    <span className="font-mono text-xs text-gray-600 mr-3">{String.fromCharCode(65 + i)}.</span>
-                                    {opt}
-                                </motion.button>
-                            ))}
-                        </div>
-
-                        {/* Navigation */}
-                        <div className="flex items-center justify-between mt-8">
-                            <button
-                                onClick={() => setCurrentQuestion((p) => Math.max(0, p - 1))}
-                                disabled={currentQuestion === 0}
-                                className="px-4 py-2 rounded-lg text-xs font-mono text-gray-500 border border-subtle hover:border-glow disabled:opacity-30 transition-all"
-                            >
-                                ← prev
-                            </button>
-                            <div className="flex gap-1.5">
-                                {questions.map((_, i) => (
-                                    <button key={i} onClick={() => setCurrentQuestion(i)}
-                                        className={`w-2 h-2 rounded-full transition-all ${
-                                            i === currentQuestion ? "bg-hacker-green shadow-glow-green scale-125" :
-                                            answers[i] !== undefined ? "bg-hacker-green/30" : "bg-gray-700"
-                                        }`} />
-                                ))}
-                            </div>
-                            <button
-                                onClick={() => setCurrentQuestion((p) => Math.min(questions.length - 1, p + 1))}
-                                disabled={currentQuestion === questions.length - 1}
-                                className="px-4 py-2 rounded-lg text-xs font-mono text-gray-500 border border-subtle hover:border-glow disabled:opacity-30 transition-all flex items-center gap-1"
-                            >
-                                next <ChevronRight className="w-3 h-3" />
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Right — Monitor Panel */}
-                <div className="w-72 border-l border-subtle p-4 flex flex-col gap-4 overflow-y-auto">
-                    <div className="relative rounded-xl overflow-hidden border border-subtle">
-                        <video ref={videoRef} autoPlay muted playsInline className="w-full aspect-[4/3] object-cover" />
-                        <div className="absolute inset-0 scan-line opacity-30" />
-                        <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/60 font-mono text-[9px]">
-                            <div className="status-dot live" />
-                            <span className="text-hacker-green">REC</span>
-                        </div>
-                        {snapshot?.face.rawData?.faceCount !== undefined && (
-                            <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/60 font-mono text-[9px] text-gray-400">
-                                faces: <span className={`${(snapshot.face.rawData.faceCount as number) === 1 ? "text-hacker-green" : "text-[#ff3366]"}`}>
-                                    {snapshot.face.rawData.faceCount as number}
-                                </span>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="flex items-center justify-center"><TrustGauge score={trustScore} /></div>
-
-                    <div className="flex items-center justify-between px-2">
-                        <div className="flex items-center gap-2 font-mono text-[10px] text-gray-600">
-                            <Volume2 className="w-3 h-3" /><span>AUDIO</span>
-                        </div>
-                        <AudioMeter level={audioLevel} />
-                    </div>
-
-                    <div className="glass-card p-3">
-                        <div className="flex items-center justify-between mb-2">
-                            <p className="font-mono text-[9px] text-gray-600 uppercase tracking-wider">Signal Channels</p>
-                            <p className="font-mono text-[9px] text-gray-700">2fps</p>
-                        </div>
-                        <ChannelDots snapshot={snapshot} />
-                    </div>
-
-                    {snapshot && (
-                        <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-surface-1 border border-subtle font-mono text-[10px]">
-                            <span className="text-gray-600">FUSION</span>
-                            <span className={`font-bold ${snapshot.fusedScore < 0.3 ? "text-hacker-green" : snapshot.fusedScore < 0.6 ? "text-[#ffb800]" : "text-[#ff3366]"}`}>
-                                {snapshot.fusedScore.toFixed(3)}
-                            </span>
-                        </div>
-                    )}
-
-                    {/* DB sync indicator */}
-                    <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-surface-1 border border-subtle font-mono text-[10px]">
-                        <span className="text-gray-600">MongoDB</span>
-                        <span className={sessionId ? "text-hacker-green" : "text-[#ffb800]"}>
-                            {sessionId ? `syncing · ${sessionId.slice(-6)}` : "no session"}
-                        </span>
-                    </div>
-
-                    {violations.length > 0 && (
-                        <div className="glass-card p-3">
-                            <p className="font-mono text-[9px] text-[#ff3366] mb-2">VIOLATIONS ({violations.length})</p>
-                            {violations.slice(-4).map((v, i) => (
-                                <div key={i} className="flex items-center gap-2 py-1">
-                                    <AlertTriangle className="w-2.5 h-2.5 text-[#ff3366] flex-shrink-0" />
-                                    <span className="text-[10px] text-gray-500 font-mono truncate">{v.type.replace(/_/g, " ")}</span>
-                                    <span className="text-[9px] text-gray-700 font-mono ml-auto flex-shrink-0">{v.time}</span>
+            {/* Main content area */}
+            <div className="flex-1 flex min-h-0">
+                {isCodingQuestion ? (
+                    /* ══ CODING QUESTION LAYOUT ══ */
+                    <div className="flex-1 flex min-h-0">
+                        {/* Left panel — Question */}
+                        <div className="w-[40%] min-w-[320px] border-r border-subtle flex flex-col">
+                            <div className="flex-1 p-5 overflow-y-auto">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <span className="section-label">question {currentQuestion + 1}</span>
+                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#8b5cf6]/10 text-[#8b5cf6]">{currentQ?.points} pts</span>
+                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-2 text-gray-600">coding</span>
                                 </div>
-                            ))}
+                                <h2 className="text-sm font-display font-semibold text-white leading-relaxed mb-4 whitespace-pre-wrap">
+                                    {currentQ?.text}
+                                </h2>
+
+                                {/* Test cases preview */}
+                                {currentQ?.testCases && currentQ.testCases.filter((t) => !t.isHidden).length > 0 && (
+                                    <div className="space-y-2 mt-4">
+                                        <p className="font-mono text-[10px] text-gray-500 uppercase tracking-wider">Sample Test Cases</p>
+                                        {currentQ.testCases.filter((t) => !t.isHidden).map((tc, i) => (
+                                            <div key={i} className="glass-card p-3 font-mono text-xs space-y-1">
+                                                <div><span className="text-gray-600">Input:</span> <span className="text-gray-400">{tc.input}</span></div>
+                                                <div><span className="text-gray-600">Output:</span> <span className="text-hacker-green">{tc.expectedOutput}</span></div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Question navigation */}
+                            <div className="px-5 py-3 border-t border-subtle flex items-center justify-between">
+                                <button
+                                    onClick={() => setCurrentQuestion((p) => Math.max(0, p - 1))}
+                                    disabled={currentQuestion === 0}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-mono text-gray-500 border border-subtle hover:border-glow disabled:opacity-30 transition-all"
+                                >
+                                    ← prev
+                                </button>
+                                <div className="flex gap-1.5">
+                                    {questions.map((q, i) => (
+                                        <button key={i} onClick={() => setCurrentQuestion(i)}
+                                            className={`w-2 h-2 rounded-full transition-all ${i === currentQuestion ? "bg-hacker-green shadow-glow-green scale-125" :
+                                                (q.type === "coding" ? codeAnswers[i] : answers[i] !== undefined) ? "bg-hacker-green/30" : "bg-gray-700"
+                                                }`} />
+                                    ))}
+                                </div>
+                                <button
+                                    onClick={() => setCurrentQuestion((p) => Math.min(questions.length - 1, p + 1))}
+                                    disabled={currentQuestion === questions.length - 1}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-mono text-gray-500 border border-subtle hover:border-glow disabled:opacity-30 transition-all flex items-center gap-1"
+                                >
+                                    next <ChevronRight className="w-3 h-3" />
+                                </button>
+                            </div>
                         </div>
-                    )}
-                </div>
+
+                        {/* Right panel — Code Editor */}
+                        <div className="flex-1 flex flex-col min-h-0">
+                            <CodeEditor
+                                starterCode={currentQ?.starterCode}
+                                languages={currentQ?.languages}
+                                testCases={currentQ?.testCases}
+                                onCodeChange={(code, language) => {
+                                    setCodeAnswers((prev) => ({ ...prev, [currentQuestion]: { code, language } }));
+                                }}
+                            />
+                        </div>
+
+                        {/* Compact proctor overlay */}
+                        <ProctorOverlay
+                            videoRef={videoRef}
+                            snapshot={snapshot}
+                            trustScore={trustScore}
+                            violations={violations}
+                            pipelineReady={pipelineReady}
+                            sessionId={sessionId}
+                            socketConnected={socketConnected}
+                            compact={true}
+                            onToggleCompact={() => setProctorCompact(!proctorCompact)}
+                        />
+                    </div>
+                ) : (
+                    /* ══ MCQ QUESTION LAYOUT ══ */
+                    <>
+                        {/* Left — Questions from DB */}
+                        <div className="flex-1 p-6 overflow-y-auto">
+                            <div className="max-w-xl">
+                                <div className="flex items-center gap-3 mb-1">
+                                    <span className="section-label">question {currentQuestion + 1}</span>
+                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-hacker-green/10 text-hacker-green">{currentQ?.points} pts</span>
+                                </div>
+                                <h2 className="text-base font-display font-semibold text-white mt-2 mb-6 leading-relaxed">
+                                    {currentQ?.text}
+                                </h2>
+
+                                <div className="space-y-2">
+                                    {currentQ?.options?.map((opt, i) => (
+                                        <motion.button
+                                            key={i}
+                                            onClick={() => setAnswers({ ...answers, [currentQuestion]: i })}
+                                            className={`w-full text-left glass-card p-4 text-sm transition-all duration-300 ${answers[currentQuestion] === i
+                                                ? "border-hacker-green/30 bg-hacker-green/[0.03] text-white"
+                                                : "text-gray-400 hover:text-gray-200"
+                                                }`}
+                                            whileHover={{ x: 3 }}
+                                        >
+                                            <span className="font-mono text-xs text-gray-600 mr-3">{String.fromCharCode(65 + i)}.</span>
+                                            {opt}
+                                        </motion.button>
+                                    ))}
+                                </div>
+
+                                {/* Navigation */}
+                                <div className="flex items-center justify-between mt-8">
+                                    <button
+                                        onClick={() => setCurrentQuestion((p) => Math.max(0, p - 1))}
+                                        disabled={currentQuestion === 0}
+                                        className="px-4 py-2 rounded-lg text-xs font-mono text-gray-500 border border-subtle hover:border-glow disabled:opacity-30 transition-all"
+                                    >
+                                        ← prev
+                                    </button>
+                                    <div className="flex gap-1.5">
+                                        {questions.map((q, i) => (
+                                            <button key={i} onClick={() => setCurrentQuestion(i)}
+                                                className={`w-2 h-2 rounded-full transition-all ${i === currentQuestion ? "bg-hacker-green shadow-glow-green scale-125" :
+                                                    (q.type === "coding" ? codeAnswers[i] : answers[i] !== undefined) ? "bg-hacker-green/30" : "bg-gray-700"
+                                                    }`} />
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => setCurrentQuestion((p) => Math.min(questions.length - 1, p + 1))}
+                                        disabled={currentQuestion === questions.length - 1}
+                                        className="px-4 py-2 rounded-lg text-xs font-mono text-gray-500 border border-subtle hover:border-glow disabled:opacity-30 transition-all flex items-center gap-1"
+                                    >
+                                        next <ChevronRight className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right — Full Proctor Overlay */}
+                        <ProctorOverlay
+                            videoRef={videoRef}
+                            snapshot={snapshot}
+                            trustScore={trustScore}
+                            violations={violations}
+                            pipelineReady={pipelineReady}
+                            sessionId={sessionId}
+                            socketConnected={socketConnected}
+                            compact={false}
+                            onToggleCompact={() => setProctorCompact(!proctorCompact)}
+                        />
+                    </>
+                )}
             </div>
 
             {/* Warning overlay */}

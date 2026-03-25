@@ -17,11 +17,24 @@ export interface IUser {
 }
 
 // ----- Exam -----
+export interface ITestCase {
+    input: string;
+    expectedOutput: string;
+    isHidden?: boolean;
+}
+
 export interface IQuestion {
     id: string;
     text: string;
-    options: string[];
-    correctAnswer: number; // index of correct option
+    type: "mcq" | "coding";
+    // MCQ fields
+    options?: string[];
+    correctAnswer?: number; // index of correct option
+    // Coding fields
+    starterCode?: Record<string, string>; // { python: "def solve():", javascript: "function solve() {" }
+    testCases?: ITestCase[];
+    languages?: string[]; // ["python", "javascript", "cpp", "java"]
+    // Common
     points: number;
 }
 
