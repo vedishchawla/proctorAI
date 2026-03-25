@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import connectDB from "@/lib/mongodb";
 import Exam from "@/models/Exam";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/exams — List all exams
 export async function GET() {
     try {
