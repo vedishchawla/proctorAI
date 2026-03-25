@@ -84,14 +84,14 @@ export function analyzeAudio(calibration?: CalibrationData): SignalReading {
             console.log(`[Audio] Vol: ${volume.toFixed(3)}, Adj: ${adjustedVolume.toFixed(3)}, Speech: ${speechRatio.toFixed(2)}`);
         }
 
-        if (adjustedVolume > 0.01 && speechRatio > 0.1) {
-            // Likely speech
-            score = Math.min(1, adjustedVolume * 10);
-        } else if (adjustedVolume > 0.02) {
-            // Loud noise (could be anything)
-            score = Math.min(0.8, adjustedVolume * 5);
+        if (adjustedVolume > 0.03 && speechRatio > 0.15) {
+            // Likely speech (requires louder volume and clearer speech freq)
+            score = Math.min(1, adjustedVolume * 5);
+        } else if (adjustedVolume > 0.06) {
+            // Loud noise (could be anything, requires significantly louder sound)
+            score = Math.min(0.8, adjustedVolume * 3);
         } else {
-            // Normal/quiet
+            // Normal/quiet background noise
             score = 0;
         }
 
