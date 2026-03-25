@@ -10,8 +10,9 @@ import { estimateGaze } from "./gazeEstimation";
 import { estimateHeadPose } from "./headPoseEstimation";
 import { analyzeAudio } from "./audioAnalysis";
 
-const CALIBRATION_DURATION = 30; // seconds
 const SAMPLE_INTERVAL = 500; // ms between samples
+const MIN_FACE_SAMPLES = 20; // Need at least 20 good face detections to calibrate
+const HARD_TIMEOUT = 60_000; // 60s absolute max — prevent infinite stall
 
 interface CalibrationSamples {
     faceBoxes: Array<{ x: number; y: number; width: number; height: number }>;
@@ -31,14 +32,23 @@ export async function runCalibration(
     };
 
     let elapsed = 0;
-    const totalSamples = (CALIBRATION_DURATION * 1000) / SAMPLE_INTERVAL;
+    let consecutiveMisses = 0;
 
     return new Promise((resolve) => {
         const sampleInterval = setInterval(async () => {
             elapsed += SAMPLE_INTERVAL;
-            const progress = Math.min(1, elapsed / (CALIBRATION_DURATION * 1000));
 
-            eventBus.emit(EVENTS.CALIBRATION_PROGRESS, { progress, elapsed });
+            // Progress is based on SUCCESSFUL face detections, not time
+            const progress = Math.min(1, samples.faceBoxes.length / MIN_FACE_SAMPLES);
+            const faceDetected = samples.faceBoxes.length > 0 && consecutiveMisses < 3;
+
+            eventBus.emit(EVENTS.CALIBRATION_PROGRESS, {
+                progress,
+                elapsed,
+                faceDetected,
+                samplesCollected: samples.faceBoxes.length,
+                samplesNeeded: MIN_FACE_SAMPLES,
+            });
 
             try {
                 // Sample face
@@ -46,6 +56,9 @@ export async function runCalibration(
                 if (faceReading.rawData?.detections && (faceReading.rawData.detections as Array<{box: {x: number; y: number; width: number; height: number}}>).length === 1) {
                     const det = (faceReading.rawData.detections as Array<{box: {x: number; y: number; width: number; height: number}}>)[0];
                     samples.faceBoxes.push(det.box);
+                    consecutiveMisses = 0;
+                } else {
+                    consecutiveMisses++;
                 }
 
                 // Sample gaze
@@ -80,11 +93,19 @@ export async function runCalibration(
                 }
             } catch (error) {
                 console.error("[Calibration] Sample error:", error);
+                consecutiveMisses++;
             }
 
-            // Done?
-            if (elapsed >= CALIBRATION_DURATION * 1000) {
+            // Complete when enough face samples collected, OR hard timeout reached
+            const hasEnoughSamples = samples.faceBoxes.length >= MIN_FACE_SAMPLES;
+            const hardTimedOut = elapsed >= HARD_TIMEOUT;
+
+            if (hasEnoughSamples || hardTimedOut) {
                 clearInterval(sampleInterval);
+
+                if (hardTimedOut && samples.faceBoxes.length < 5) {
+                    console.warn("[Calibration] Timed out with insufficient face data — using defaults");
+                }
 
                 // Compute averages
                 const calibrationData = computeCalibrationData(samples);
