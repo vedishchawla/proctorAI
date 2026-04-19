@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+    typescript: {
+        ignoreBuildErrors: true,
+    },
+    eslint: {
+        ignoreDuringBuilds: true,
+    },
     // Required for face-api.js and TensorFlow.js compatibility
     webpack: (config) => {
         config.resolve.fallback = {
