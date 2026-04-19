@@ -744,7 +744,7 @@ export default function ExamPage() {
                         </h2>
 
                         <div className="space-y-2">
-                            {questions[currentQuestion]?.options.map((opt, i) => (
+                            {questions[currentQuestion]?.options?.map((opt, i) => (
                                 <motion.button
                                     key={i}
                                     onClick={() => setAnswers({ ...answers, [currentQuestion]: i })}
