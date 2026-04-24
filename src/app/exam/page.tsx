@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth";
 import { useRouter } from "next/navigation";
-import { Clock, FileText, ChevronRight, Shield, Plus, Loader2 } from "lucide-react";
+import { Clock, FileText, ChevronRight, Shield, Plus, Loader2, LogOut } from "lucide-react";
 
 interface ExamItem {
     _id: string;
@@ -17,7 +17,7 @@ interface ExamItem {
 }
 
 export default function ExamListPage() {
-    const { user, loading: authLoading } = useAuth();
+    const { user, loading: authLoading, signOut } = useAuth();
     const router = useRouter();
     const [exams, setExams] = useState<ExamItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -73,6 +73,14 @@ export default function ExamListPage() {
                     <div className="w-6 h-6 rounded-md bg-hacker-green/10 flex items-center justify-center text-[10px] font-bold text-hacker-green">
                         {user?.name?.charAt(0) || "S"}
                     </div>
+                    <button
+                        onClick={() => signOut()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono text-gray-400 border border-white/5 hover:border-[#ff3366]/30 hover:text-[#ff3366] transition-all duration-300"
+                        title="Sign out"
+                    >
+                        <LogOut className="w-3 h-3" />
+                        logout
+                    </button>
                 </div>
             </nav>
 
