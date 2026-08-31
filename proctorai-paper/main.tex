@@ -1,0 +1,466 @@
+% ============================================================
+% ProctorAI — IEEE Conference Paper (Final Version)
+% Official IEEE Conference Template (IEEEtran.cls)
+% Overleaf: Upload main.tex + references.bib → pdfLaTeX
+% ============================================================
+\documentclass[conference]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{balance}
+\usepackage{float}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue
+}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{ProctorAI: A Privacy-Preserving Multi-Channel Behavioral Fusion Framework for AI-Proctored Online Examinations}
+
+\author{
+    \IEEEauthorblockN{Vedish Chawla, Aaditya Sonesar, Dolly Balwani}
+    \IEEEauthorblockA{
+        \textit{Department of Computer Engineering} \\
+        \textit{Vivekanand Education Society's Institute of Technology (VESIT)} \\
+        Mumbai, India \\
+        2023.vedish.chawla@ves.ac.in
+    }
+    \and
+    \IEEEauthorblockN{Prof. Sanjay Mirchandani}
+    \IEEEauthorblockA{
+        \textit{Department of Computer Engineering} \\
+        \textit{Vivekanand Education Society's Institute of Technology (VESIT)} \\
+        Mumbai, India
+    }
+}
+
+\maketitle
+
+% ============================================================
+% ABSTRACT
+% ============================================================
+\begin{abstract}
+Online examinations have become the norm across universities, yet keeping them fair remains a challenge. Current proctoring tools like Proctorio, ExamSoft, and ProctorU depend on uploading webcam recordings to cloud servers, raising well-documented concerns about student data privacy. These tools typically monitor only one or two signals---face visibility and tab switching---resulting in frequent false alarms when normal behavior gets misclassified.
+
+This paper presents ProctorAI, a browser-based proctoring system that takes a fundamentally different approach. It monitors five behavioral channels simultaneously: face detection, gaze direction, head pose, ambient audio, and browser interactions such as tab switches and clipboard use. A weighted fusion engine combines all five signals and applies temporal smoothing over a 5-second window, allowing the system to distinguish sustained suspicious behavior from brief, harmless events.
+
+What sets this system apart from existing solutions is where the AI runs. All neural network inference---including SSD MobileNet-based face detection and 68-point landmark extraction---executes entirely inside the student's browser using TensorFlow.js. No video, no audio, and no biometric features are ever transmitted to any server. We evaluated the system across eight controlled test scenarios with 15 participants and observed 91.2\% mean detection accuracy, a 4.5\% false positive rate, and zero bytes of biometric data leaving the client device.
+\end{abstract}
+
+\begin{IEEEkeywords}
+online proctoring, multi-channel signal fusion, privacy-preserving AI, behavioral analysis, face detection, gaze estimation, client-side inference, TensorFlow.js
+\end{IEEEkeywords}
+
+% ============================================================
+% I. INTRODUCTION
+% ============================================================
+\section{Introduction}
+
+The COVID-19 pandemic forced educational institutions worldwide to adopt online assessment methods at an unprecedented scale. UNESCO reported that over 1.5 billion students were affected by campus shutdowns \cite{unesco2020}, and the transition to remote exams brought the cheating problem into sharp focus \cite{hussein2020}.
+
+The proctoring tools that emerged in response broadly fall into three categories. Lockdown browsers such as Respondus restrict device functionality during exams, but these can be circumvented using secondary devices and impose strict hardware requirements \cite{coghlan2021}. Cloud-based AI systems like Proctorio and ExamSoft record webcam footage and transmit it to remote servers for algorithmic analysis. While widely adopted, these platforms have drawn criticism over their handling of sensitive biometric data---students often have no clarity on where their recordings are stored or how long they are retained \cite{swauger2020}. Live human proctoring services like ProctorU offer higher accuracy through real-time video supervision, but at a cost of \$15--30 per student per session, making them impractical for most Indian educational institutions \cite{nigam2021}.
+
+Beyond the cost and privacy issues, there is a more fundamental limitation. Most proctoring systems rely on just one or two monitoring signals---typically face detection paired with tab-switch counting. This narrow scope creates a high rate of false positives. A student glancing at a clock, a roommate walking behind the webcam, or a cough picked up by the microphone can all trigger violation flags even though no cheating occurred \cite{li2021}. Single-channel systems lack the context needed to separate genuine malpractice from ordinary behavior.
+
+ProctorAI was designed to address both of these gaps simultaneously. Our contributions are:
+
+\begin{enumerate}
+    \item A five-channel monitoring pipeline that covers face detection, gaze direction, head orientation, audio analysis, and browser interactions. By watching five independent signals rather than one or two, the system gets a substantially richer view of student behavior during exams.
+    \item A weighted fusion engine that combines these five channel outputs into a single trust score. A sliding window average over 5 seconds filters out momentary anomalies, significantly reducing false alarms caused by innocent actions like stretching or looking away briefly.
+    \item A fully client-side AI architecture. The entire inference stack---face detection models, landmark extraction, audio spectral analysis---runs within the browser using TensorFlow.js. The server never receives any video, audio, or biometric data. Only structured violation metadata is transmitted.
+\end{enumerate}
+
+The paper is organized as follows. Section~II reviews existing proctoring solutions and relevant research. Section~III describes the system architecture. Section~IV details the methodology behind each monitoring channel and the fusion mechanism. Section~V covers the implementation. Section~VI presents experimental results. Section~VII discusses limitations and future directions.
+
+% ============================================================
+% II. RELATED WORK
+% ============================================================
+\section{Related Work}
+
+\subsection{Commercial Proctoring Platforms}
+
+Proctorio \cite{proctorio2023} operates as a Chrome extension that blocks copy-paste, disables screen capture, and records exam sessions for post-hoc AI analysis. The recorded video is sent to Proctorio's cloud infrastructure, and the AI flagging criteria remain proprietary and non-transparent \cite{swauger2020}. ExamSoft \cite{examsoft2023} follows a similar model---webcam and audio feeds are captured and processed on remote servers using proprietary machine learning pipelines. This approach requires reliable broadband connectivity and creates compliance challenges under regulations such as GDPR and India's Digital Personal Data Protection Act, 2023 \cite{dpdpa2023}. ProctorU \cite{proctoru2023} combines algorithmic flagging with live human proctors who supervise students via video conferencing. While effective, the per-student cost and the need for trained human staff limit its scalability.
+
+\subsection{Research in Automated Proctoring}
+
+Several academic efforts have explored components of the proctoring problem. Atoum et al. \cite{atoum2017} built a multimedia analytics system combining gaze tracking with face detection, demonstrating that multi-modal monitoring outperforms single-signal approaches. Their system, however, required dedicated server-side hardware for processing. Chuang et al. \cite{chuang2017} developed a face recognition system for verifying student identity at the start of online exams, though their work did not extend to continuous behavioral monitoring during the test. Li et al. \cite{li2021} applied convolutional neural networks for gaze-based attention tracking in educational settings, achieving strong accuracy but requiring GPU-equipped servers. Tiong and Lee \cite{tiong2021} investigated head pose as an engagement indicator using 3D facial landmark regression, establishing that head orientation correlates well with attention direction, though relying on it as a sole signal has clear limitations.
+
+\subsection{Browser-Based Machine Learning}
+
+Our approach is enabled by the maturation of in-browser ML frameworks. TensorFlow.js \cite{smilkov2019} executes trained neural network models directly in the browser's JavaScript runtime, leveraging WebGL for GPU acceleration without any server communication. The face-api.js library \cite{faceapijs} builds on TensorFlow.js to provide ready-to-use models for face detection and 68-point landmark localization. In our testing, we found that face-api.js can sustain 2+ FPS face analysis on a mid-range laptop---sufficient for real-time proctoring applications.
+
+\subsection{Positioning of ProctorAI}
+
+Table~\ref{tab:comparison} compares ProctorAI against existing systems at the feature level. No current solution offers all five monitoring channels with fully client-side AI execution.
+
+\begin{table}[htbp]
+\caption{Feature Comparison of Proctoring Systems}
+\label{tab:comparison}
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}p{1.6cm}ccccc@{}}
+\toprule
+\textbf{Feature} & \rotatebox{90}{\textbf{Proctorio}} & \rotatebox{90}{\textbf{ExamSoft}} & \rotatebox{90}{\textbf{ProctorU}} & \rotatebox{90}{\textbf{Atoum \cite{atoum2017}}} & \rotatebox{90}{\textbf{ProctorAI}} \\
+\midrule
+Face Detection    & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+Gaze Tracking     & --         & --         & --         & \checkmark & \checkmark \\
+Head Pose         & --         & --         & --         & --         & \checkmark \\
+Audio Analysis    & \checkmark & \checkmark & \checkmark & --         & \checkmark \\
+Input Monitor     & \checkmark & \checkmark & --         & --         & \checkmark \\
+Client-Side AI    & --         & --         & --         & --         & \checkmark \\
+No Data Upload    & --         & --         & --         & --         & \checkmark \\
+Signal Fusion     & --         & --         & --         & Partial    & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:params} provides a deeper comparison across practical deployment parameters---cost, infrastructure needs, privacy stance, and technical capabilities---highlighting the differences that matter for real-world adoption.
+
+\begin{table*}[htbp]
+\caption{Detailed Parameter Comparison Across Proctoring Platforms}
+\label{tab:params}
+\centering
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}p{3.8cm}p{2.8cm}p{2.8cm}p{2.8cm}p{2.8cm}@{}}
+\toprule
+\textbf{Parameter} & \textbf{Proctorio} & \textbf{ExamSoft} & \textbf{ProctorU} & \textbf{ProctorAI (Ours)} \\
+\midrule
+Processing Location         & Cloud Server          & Cloud Server           & Cloud + Human Proctor    & Client Browser (Local) \\
+Biometric Data Upload       & Yes (Video, Audio)    & Yes (Video, Audio)     & Yes (Video Stream)       & \textbf{None (Zero Upload)} \\
+No. of Monitoring Channels  & 2 (Face, Tab)         & 2 (Face, Audio)        & 2--3 (Face, Audio, Tab)  & \textbf{5 (Face, Gaze, Head, Audio, Input)} \\
+Signal Fusion               & None                  & None                   & None                     & Weighted + Temporal Smoothing \\
+Browser Lockdown            & Yes                   & Dedicated App          & Browser Extension        & \textbf{No (Standard Browser)} \\
+Real-Time Trust Score       & No (Post-hoc)         & No (Post-hoc)          & Yes (Human)              & \textbf{Yes (Automated)} \\
+Privacy Compliance          & Criticized            & GDPR Concerns          & Moderate                 & \textbf{High (Data Stays on Device)} \\
+Infrastructure Needed       & Cloud + CDN           & Cloud + CDN            & Cloud + Human Staff      & \textbf{Client Device Only} \\
+Cost per Student            & \$5--15 USD           & \$10--25 USD           & \$15--30 USD             & \textbf{Free / Open Source} \\
+Scalability                 & High (Cloud)          & High (Cloud)           & Low (Human Bottleneck)   & \textbf{High (No Server Load)} \\
+Installation Required       & Browser Extension     & Desktop App            & Browser Extension        & \textbf{None (Web-Based)} \\
+AI Framework                & Proprietary           & Proprietary            & Proprietary + Human      & TensorFlow.js (Open) \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+% ============================================================
+% III. SYSTEM ARCHITECTURE
+% ============================================================
+\section{System Architecture}
+
+ProctorAI is built on Next.js~15 using the App Router architecture. The system is divided into a client-side AI engine that handles all behavioral monitoring, and a server-side layer responsible for exam management and data storage.
+
+\subsection{Client-Side AI Engine}
+
+Five independent monitoring channels operate inside the student's browser, coordinated by a central pipeline that triggers an analysis cycle every 500\,ms. Each channel processes a different type of input---webcam frames, microphone audio, or browser events---and produces a standardized signal reading:
+
+\begin{equation}
+    R_c = \langle \textit{channel}, \; s_c, \; \gamma_c, \; t \rangle
+\end{equation}
+
+Here $c$ identifies the channel, $s_c \in [0,1]$ is the anomaly score (0 indicates normal behavior, 1 indicates a strong anomaly), $\gamma_c \in [0,1]$ represents the channel's confidence in its own reading, and $t$ is the timestamp. All five readings are passed to the Signal Fusion Engine, which produces a unified trust score.
+
+% Uncomment to add screenshot:
+% \begin{figure}[htbp]
+% \centering
+% \includegraphics[width=\columnwidth]{figures/architecture.png}
+% \caption{System architecture of ProctorAI. The client-side engine runs five monitoring channels and a fusion module. The server handles exam management, violation logging, and real-time dashboard updates.}
+% \label{fig:architecture}
+% \end{figure}
+
+\subsection{Server-Side Layer}
+
+The backend provides REST API endpoints for exams (\texttt{/api/exams}), sessions (\texttt{/api/sessions}), violations (\texttt{/api/violations}), and reports (\texttt{/api/reports}). Data is stored in MongoDB Atlas via Mongoose~9. Authentication uses Firebase with Google Sign-In. For the administrator dashboard, Socket.IO enables real-time bidirectional communication so that trust scores update live as students take the exam.
+
+\subsection{Inter-Channel Communication}
+
+We use a publish-subscribe event bus for communication between channels. Each channel emits events (such as \texttt{FACE\_SIGNAL} or \texttt{INTERACTION\_SIGNAL}) that the fusion engine consumes. This design avoids tight coupling between modules---adding a new channel or modifying an existing one does not require changes elsewhere in the codebase.
+
+% ============================================================
+% IV. METHODOLOGY
+% ============================================================
+\section{Methodology}
+
+This section explains the algorithm behind each of the five channels and describes how we combine their outputs.
+
+\subsection{Channel 1: Face Detection}
+
+Face detection uses the SSD MobileNet~v1 architecture \cite{liu2016ssd} through face-api.js \cite{faceapijs}. Every 500\,ms, the model processes the current webcam frame and returns bounding box coordinates along with a detection confidence score. Simultaneously, a 68-point face landmark model \cite{kazemi2014} extracts the facial geometry, which feeds directly into the gaze and head pose channels.
+
+The face channel anomaly score is determined as:
+\begin{equation}
+    s_{\text{face}} = \begin{cases}
+        1.0 & \text{no face detected for } > 2000 \text{\,ms} \\
+        0.8 & \text{multiple faces in frame} \\
+        1 - p_{\text{det}} & \text{single face with confidence } p_{\text{det}} \\
+        0.0 & \text{single face clearly detected}
+    \end{cases}
+\end{equation}
+
+The 2-second threshold for face absence is deliberate. During development, we observed that the model occasionally misses a frame when the student moves quickly or looks down at the desk. Without this buffer, such transient gaps would generate constant false violations.
+
+\subsection{Channel 2: Gaze Estimation}
+
+Gaze direction is estimated purely from the facial landmark positions around each eye. We approximate the iris center by computing the midpoint of the upper and lower eyelid landmarks:
+
+\begin{equation}
+    P_{\text{iris}} = \frac{1}{2}\left(\frac{L_1 + L_2}{2} + \frac{L_4 + L_5}{2}\right)
+\end{equation}
+
+where $L_1, L_2$ are the upper eyelid points and $L_4, L_5$ are the lower eyelid points from the standard 6-point eye model.
+
+Before each exam, a 10-second calibration phase records the student's neutral gaze position. During the exam, deviation from this baseline is measured:
+
+\begin{equation}
+    \Delta g_x = \frac{P_{\text{iris},x} - C_x}{W_{\text{eye}}}, \quad \Delta g_y = \frac{P_{\text{iris},y} - C_y}{H_{\text{eye}}}
+\end{equation}
+
+$C_x, C_y$ are the calibrated center coordinates, and $W_{\text{eye}}, H_{\text{eye}}$ normalize for differences in eye size across individuals. The gaze anomaly score is $s_{\text{gaze}} = \min(1, \sqrt{\Delta g_x^2 + \Delta g_y^2})$, activated only when the deviation persists beyond 1000\,ms.
+
+\subsection{Channel 3: Head Pose Estimation}
+
+Head orientation is computed as Euler angles using six key facial landmarks: the nose tip ($L_{30}$), chin ($L_8$), eye corners ($L_{36}$, $L_{45}$), and mouth corners ($L_{48}$, $L_{54}$). Yaw---the sideways turn of the head---is the most telling indicator:
+
+\begin{equation}
+    \theta_{\text{yaw}} = \frac{L_{30,x} - \bar{x}_{\text{eye}}}{|L_{45,x} - L_{36,x}|} \times 90°
+\end{equation}
+
+where $\bar{x}_{\text{eye}}$ denotes the midpoint between the two eye corners. Pitch is computed analogously from vertical displacement. The combined anomaly score considers both:
+
+\begin{equation}
+    s_{\text{head}} = \min\left(1, \; \frac{|\theta_{\text{yaw}}|}{45°} + \frac{|\theta_{\text{pitch}}|}{30°}\right)
+\end{equation}
+
+Violations are flagged only when this score remains elevated for at least 1500\,ms continuously.
+
+\subsection{Channel 4: Audio Analysis}
+
+Rather than recording audio, we perform real-time spectral analysis using the Web Audio API. An \texttt{AnalyserNode} configured with a 1024-point FFT and a smoothing constant of 0.8 provides frequency-domain data at each analysis interval.
+
+Speech detection focuses on the 300--3400\,Hz frequency band where human voice energy concentrates:
+
+\begin{equation}
+    E_{\text{speech}} = \frac{1}{N_s}\sum_{k=k_{\text{lo}}}^{k_{\text{hi}}} |X[k]|^2
+\end{equation}
+
+$X[k]$ represents the FFT bin magnitudes, $k_{\text{lo}}$ and $k_{\text{hi}}$ mark the speech band boundaries, and $N_s$ is the bin count in that range. The calibration phase captures the ambient noise baseline. During the exam, if speech-band energy exceeds this baseline for more than 1000\,ms, the channel flags a potential violation. We acknowledge that this approach has difficulty in environments with significant background noise, as sounds like keyboard typing and fan noise can overlap with the speech frequency range.
+
+\subsection{Channel 5: Interaction Monitoring}
+
+This channel tracks browser-level events through standard Web APIs:
+
+\begin{itemize}
+    \item \textbf{Tab switches}: Detected via the Page Visibility API when \texttt{document.hidden} changes state.
+    \item \textbf{Clipboard activity}: Copy and paste events captured through DOM event listeners.
+    \item \textbf{Right-click}: Context menu events intercepted to flag potential content extraction.
+    \item \textbf{Window resize}: Monitored as a possible indicator of screen-sharing setups.
+    \item \textbf{Extended idle time}: No mouse or keyboard input for 30+ seconds is flagged as suspicious.
+\end{itemize}
+
+Because these events are deterministic---a tab switch either happened or it did not---this channel achieves near-perfect detection accuracy for the behaviors it monitors.
+
+\subsection{Signal Fusion with Temporal Smoothing}
+
+The five channel scores are combined through a weighted sum:
+
+\begin{equation}
+    S_{\text{fused}}(t) = \sum_{c \in \mathcal{C}} w_c \cdot s_c(t)
+    \label{eq:fusion}
+\end{equation}
+
+The weight distribution is: $w_{\text{face}} = 0.25$, $w_{\text{gaze}} = 0.25$, $w_{\text{head}} = 0.20$, $w_{\text{audio}} = 0.15$, $w_{\text{interaction}} = 0.15$. Face and gaze receive higher weights because they correlate most directly with whether the student is looking at the exam screen. Audio and interaction serve more as corroborating signals.
+
+To prevent false alarms from brief, innocent events, we apply a sliding window average:
+
+\begin{equation}
+    \bar{S}(t) = \frac{1}{|W|}\sum_{i=0}^{|W|-1} S_{\text{fused}}(t - i \cdot \Delta t)
+    \label{eq:smoothing}
+\end{equation}
+
+With a window size $|W| = 10$ at $\Delta t = 500$\,ms intervals, this produces an effective smoothing period of 5 seconds. A single anomalous frame has minimal impact on the average, but sustained suspicious behavior over multiple seconds is clearly reflected.
+
+The final trust score is:
+
+\begin{equation}
+    T(t) = \max\left(0, \; \min\left(100, \; \lfloor(1 - \bar{S}(t)) \times 100\rceil\right)\right)
+    \label{eq:trust}
+\end{equation}
+
+A score of 100 represents fully compliant behavior. As anomalous signals accumulate across channels, the score drops accordingly.
+
+% ============================================================
+% V. IMPLEMENTATION
+% ============================================================
+\section{Implementation}
+
+\subsection{Technology Stack}
+
+ProctorAI is built as a full-stack TypeScript application. Table~\ref{tab:techstack} summarizes the components.
+
+\begin{table}[htbp]
+\caption{Technology Stack}
+\label{tab:techstack}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Component} & \textbf{Technology} \\
+\midrule
+Frontend Framework  & Next.js 15 (App Router) \\
+Language            & TypeScript \\
+Client-Side AI      & face-api.js (TensorFlow.js) \\
+Audio Processing    & Web Audio API \\
+Authentication      & Firebase (Google Sign-In) \\
+Database            & MongoDB Atlas (Mongoose 9) \\
+Real-Time Updates   & Socket.IO \\
+Hosting             & Vercel \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Calibration Phase}
+
+Each student undergoes a 10-second calibration step before the exam begins. During this phase, the system captures the student's baseline gaze position, neutral head orientation, and ambient noise level. This per-user calibration is essential---without it, students with off-center webcam placement or noisier environments would receive disproportionate false violations from the very start. The calibration data tells the system what ``normal'' looks like for each individual setup.
+
+\subsection{Pipeline Orchestration}
+
+The analysis pipeline executes a fixed sequence every 500\,ms: capture a webcam frame, run face detection and landmark extraction, compute gaze and head pose from the landmarks, analyze the audio spectrum, poll for new browser events, and pass all five readings to the fusion engine. The entire pipeline runs asynchronously, ensuring the browser remains responsive throughout. On a mid-range laptop (Intel i5, 8\,GB RAM), we measured the complete cycle finishing in under 490\,ms on average, leaving sufficient headroom within the 500\,ms budget.
+
+\subsection{Examination Interface}
+
+The exam interface supports two question formats: multiple-choice and coding questions. The code editor is based on Monaco (the same engine behind VS Code) with syntax highlighting for Python, JavaScript, C++, and Java. A compact proctor overlay in the corner displays the current trust score and a miniature webcam preview, keeping students aware of the monitoring without creating a distraction.
+
+% Uncomment to add screenshots:
+% \begin{figure}[htbp]
+% \centering
+% \includegraphics[width=\columnwidth]{figures/exam-interface.png}
+% \caption{Exam interface showing the code editor, proctor overlay with trust score, and webcam preview.}
+% \label{fig:examui}
+% \end{figure}
+
+% \begin{figure}[htbp]
+% \centering
+% \includegraphics[width=\columnwidth]{figures/dashboard.png}
+% \caption{Administrator dashboard displaying real-time trust scores and violation history for active exam sessions.}
+% \label{fig:dashboard}
+% \end{figure}
+
+% ============================================================
+% VI. RESULTS AND ANALYSIS
+% ============================================================
+\section{Results and Analysis}
+
+\subsection{Experimental Setup}
+
+We conducted controlled testing with 15 participants across 45 simulated exam sessions (3 sessions per participant). Tests used consumer-grade hardware---an Intel Core i5 laptop with 8\,GB RAM and an integrated webcam---running Google Chrome v126. We designed eight test scenarios covering individual channel triggers as well as multi-channel combinations.
+
+\subsection{Detection Accuracy}
+
+Table~\ref{tab:results} presents the detection results. Each scenario was repeated three times per participant.
+
+\begin{table}[htbp]
+\caption{Detection Results Across Test Scenarios}
+\label{tab:results}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}p{2.4cm}p{1.5cm}cc@{}}
+\toprule
+\textbf{Scenario} & \textbf{Channel(s)} & \textbf{Acc. (\%)} & \textbf{FPR (\%)} \\
+\midrule
+Normal behavior       & None          & 97.8 & 2.2 \\
+Sustained gaze away   & Gaze, Head    & 93.3 & 4.4 \\
+Tab switch            & Interaction   & 100.0 & 0.0 \\
+Multiple faces        & Face          & 88.9 & 6.7 \\
+No face ($>$2s)       & Face          & 91.1 & 4.4 \\
+Speech during exam    & Audio         & 84.4 & 8.9 \\
+Copy-paste attempt    & Interaction   & 100.0 & 0.0 \\
+Combined violations   & Multi         & 86.7 & 6.7 \\
+\midrule
+\textbf{Weighted Mean} &              & \textbf{91.2} & \textbf{4.5} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Tab switching and clipboard monitoring achieve 100\% detection since these rely on deterministic browser APIs with no ambiguity. The audio channel shows the lowest accuracy at 84.4\%, primarily because ambient sounds---keyboard typing, fans, traffic---overlap with the speech frequency band and trigger false positives. Face detection performs reliably for both the ``no face'' and ``multiple faces'' scenarios, though the latter occasionally misidentifies background elements in cluttered environments.
+
+\subsection{Performance Metrics}
+
+Table~\ref{tab:performance} summarizes the runtime characteristics.
+
+\begin{table}[htbp]
+\caption{Runtime Performance Metrics}
+\label{tab:performance}
+\centering
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}lr@{}}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Avg. frame processing time   & 487\,ms \\
+Face model loading           & 2.3\,s \\
+Landmark model loading       & 1.1\,s \\
+Browser memory usage         & $\sim$142\,MB \\
+Analysis rate                & 2\,FPS \\
+Smoothing window             & 5\,s \\
+AI data sent to server       & 0\,bytes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The 487\,ms average processing time fits within the 500\,ms analysis interval, confirming that real-time operation is sustainable on standard hardware without frame drops. Memory usage of approximately 142\,MB is dominated by the SSD MobileNet model weights and the TensorFlow.js runtime. The final row confirms the privacy guarantee: the AI pipeline transmits zero bytes of video, audio, or biometric data to the server. Only structured violation metadata---event type, timestamp, and trust score---is communicated.
+
+\subsection{Temporal Smoothing Effectiveness}
+
+We specifically tested how well the smoothing mechanism (Eq.~\ref{eq:smoothing}) handles brief, innocent anomalies such as a student looking at a wall clock, coughing, or shifting in their chair. Without smoothing, the raw fused score crossed the violation threshold in 23.1\% of these cases. With the 5-second smoothing window applied, this rate dropped to 4.5\%---an 80.5\% reduction. This result confirms that temporal smoothing is essential for practical usability. Without it, students would experience a frustrating volume of false warnings.
+
+\subsection{Channel Ablation Study}
+
+To quantify the contribution of each channel, we removed one channel at a time and measured the resulting change in overall detection accuracy:
+
+\begin{itemize}
+    \item Removing face detection: $-$12.3\% (largest individual impact)
+    \item Removing gaze tracking: $-$9.8\%
+    \item Removing interaction monitor: $-$7.1\%
+    \item Removing head pose: $-$5.4\%
+    \item Removing audio analysis: $-$3.2\% (smallest individual impact)
+\end{itemize}
+
+Every channel contributes meaningfully. Face and gaze are the strongest individual performers, consistent with their higher fusion weights. Even the audio channel, despite its lower standalone accuracy, adds measurable value when its signals are combined with the other four channels.
+
+% ============================================================
+% VII. CONCLUSION AND FUTURE WORK
+% ============================================================
+\section{Conclusion and Future Work}
+
+This paper presented ProctorAI, a proctoring framework that combines five behavioral monitoring channels through a weighted fusion engine while keeping all AI processing on the student's device. The experimental results demonstrate 91.2\% mean detection accuracy with a 4.5\% false positive rate, and the temporal smoothing mechanism reduces false alarms by over 80\%. The system requires no browser extensions, no software installation, and transmits zero biometric data to any server.
+
+We recognize several limitations. The audio channel performs inconsistently in noisy environments. The fusion weights are currently static and do not adapt to varying signal quality. The system has not yet been tested against spoofing attacks using photographs or pre-recorded video.
+
+Future work will explore the following directions:
+
+\begin{itemize}
+    \item \textbf{Liveness detection}: Adding passive anti-spoofing checks to ensure the face in the webcam feed is a live person rather than a printed photograph or video playback.
+    \item \textbf{Adaptive weighting}: Replacing the fixed fusion weights with a lightweight model that learns to increase or decrease each channel's influence based on real-time signal reliability.
+    \item \textbf{Model optimization}: Applying quantization and WebAssembly backends to reduce the 142\,MB memory footprint and extend compatibility to lower-specification hardware commonly used by students in resource-constrained environments.
+    \item \textbf{Behavioral profiling}: Building per-student behavioral baselines across multiple exam sessions to improve the system's ability to distinguish each individual's normal behavior from genuinely suspicious activity.
+    \item \textbf{Federated learning}: Enabling multiple institutions to collaboratively improve detection models without centralizing any student data.
+\end{itemize}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
