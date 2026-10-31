@@ -30,3 +30,30 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# AI agent config
+AGENTS.md
+CLAUDE.md
+PROMPT.md
+HANDOFF.md
+
+# Draft manuscripts and scratch files
+File.docx
+ProctorAI_Full_Text.docx
+architecture_fig1.png
+cleverAI-suggestions.txt
+friend.txt
+my-final-paper.txt
+journals-list.txt
+proctorai-paper.zip
+create_manuscript.py
+generate_tojde_doc.py
+socket-log.txt
+test-socket.js
+/page.tsx
+
+# Draft/superseded paper directories
+conference/
+conference-paper/
+mmu-conference/
+proctorai-paper/

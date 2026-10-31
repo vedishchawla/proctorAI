@@ -1,6 +1,6 @@
 // ========================================
 // ProctorAI — Pipeline Orchestrator
-// Coordinates all 5 channels into a unified analysis loop
+// Coordinates all 5 channels through the Kafka-style Runtime Pipeline
 // ========================================
 
 import type { CalibrationData, SignalSnapshot, SignalChannelName, SignalReading } from "@/types";
@@ -12,8 +12,10 @@ import { initInteractionMonitor, pollInteraction, stopInteractionMonitor } from 
 import { fuseSignals, resetFusion } from "./signalFusion";
 import { runCalibration } from "./calibration";
 import { eventBus, EVENTS } from "./eventBus";
+import { runtimePipeline, TOPICS } from "./runtimePipeline";
 
 const ANALYSIS_INTERVAL = 500; // 2 fps — balance between accuracy and performance
+const METRICS_INTERVAL = 5000; // emit pipeline metrics every 5s
 
 export interface PipelineConfig {
     videoElement: HTMLVideoElement;
@@ -22,11 +24,14 @@ export interface PipelineConfig {
     onViolation?: (violation: unknown) => void;
     onTrustUpdate?: (data: { trustScore: number }) => void;
     onCalibrationProgress?: (data: { progress: number }) => void;
+    onPipelineMetrics?: (metrics: unknown) => void;
 }
 
 let analysisInterval: ReturnType<typeof setInterval> | null = null;
+let metricsInterval: ReturnType<typeof setInterval> | null = null;
 let calibrationData: CalibrationData | null = null;
 let isRunning = false;
+let unsubscribeFusion: (() => void) | null = null;
 
 export async function initPipeline(config: PipelineConfig): Promise<boolean> {
     let componentsReady = 0;
@@ -60,7 +65,24 @@ export async function initPipeline(config: PipelineConfig): Promise<boolean> {
         console.warn("⚠️ Interaction monitor failed to init:", error);
     }
 
-    // 4. Set up event listeners
+    // 4. Register fusion engine as a consumer on the runtime pipeline
+    unsubscribeFusion = runtimePipeline.subscribe({
+        groupId: "fusion-engine",
+        topics: [
+            TOPICS.SIGNAL_FACE,
+            TOPICS.SIGNAL_GAZE,
+            TOPICS.SIGNAL_HEAD_POSE,
+            TOPICS.SIGNAL_AUDIO,
+            TOPICS.SIGNAL_INTERACTION,
+        ],
+        onMessage: (record) => {
+            // Signal records are consumed by fuseSignals in the analysis loop
+            // This consumer is for pipeline tracking/metrics purposes
+            void record;
+        },
+    });
+
+    // 5. Set up event listeners
     if (config.onSnapshot) {
         eventBus.on(EVENTS.SIGNAL_SNAPSHOT, config.onSnapshot as (data: unknown) => void);
     }
@@ -76,6 +98,7 @@ export async function initPipeline(config: PipelineConfig): Promise<boolean> {
 
     if (componentsReady > 0) {
         console.log(`✅ Pipeline initialized gracefully (${componentsReady}/3 channels active)`);
+        console.log(`📊 Runtime Pipeline: ${Object.keys(TOPICS).length} topics registered`);
         return true;
     } else {
         console.error("❌ All AI pipeline components failed to initialize. Falling back.");
@@ -109,7 +132,14 @@ export function startAnalysis(videoElement: HTMLVideoElement): void {
             const audioReading = analyzeAudio(calibrationData || undefined);
             const interactionReading = pollInteraction();
 
-            // Fuse all signals
+            // ── Produce each reading to its topic on the runtime pipeline ──
+            runtimePipeline.produce(TOPICS.SIGNAL_FACE, "face", faceReading, { channel: "face" });
+            runtimePipeline.produce(TOPICS.SIGNAL_GAZE, "gaze", gazeReading, { channel: "gaze" });
+            runtimePipeline.produce(TOPICS.SIGNAL_HEAD_POSE, "headPose", headReading, { channel: "headPose" });
+            runtimePipeline.produce(TOPICS.SIGNAL_AUDIO, "audio", audioReading, { channel: "audio" });
+            runtimePipeline.produce(TOPICS.SIGNAL_INTERACTION, "interaction", interactionReading, { channel: "interaction" });
+
+            // ── Fuse all signals ──
             const signals: Partial<Record<SignalChannelName, SignalReading>> = {
                 face: faceReading,
                 gaze: gazeReading,
@@ -118,13 +148,36 @@ export function startAnalysis(videoElement: HTMLVideoElement): void {
                 interaction: interactionReading,
             };
 
-            fuseSignals(signals);
+            const snapshot = fuseSignals(signals);
+
+            // ── Produce fused output and trust score to pipeline ──
+            runtimePipeline.produce(TOPICS.SIGNAL_FUSED, "fused", snapshot, { type: "snapshot" });
+            runtimePipeline.produce(TOPICS.TRUST_SCORES, "trust", {
+                trustScore: snapshot.trustScore,
+                fusedScore: snapshot.fusedScore,
+                timestamp: snapshot.timestamp,
+                channels: {
+                    face: faceReading.score,
+                    gaze: gazeReading.score,
+                    headPose: headReading.score,
+                    audio: audioReading.score,
+                    interaction: interactionReading.score,
+                },
+            });
+
         } catch (error) {
             console.error("[Pipeline] Analysis error:", error);
         }
     }, ANALYSIS_INTERVAL);
 
-    console.log("🔴 Analysis loop started (2 fps)");
+    // ── Periodic pipeline metrics emission ──
+    metricsInterval = setInterval(() => {
+        const metrics = runtimePipeline.getMetrics();
+        runtimePipeline.produce(TOPICS.PIPELINE_METRICS, "metrics", metrics);
+        eventBus.emit("pipeline:metrics", metrics);
+    }, METRICS_INTERVAL);
+
+    console.log("🔴 Analysis loop started (2 fps) — streaming through Runtime Pipeline");
 }
 
 export function stopPipeline(): void {
@@ -135,9 +188,20 @@ export function stopPipeline(): void {
         analysisInterval = null;
     }
 
+    if (metricsInterval) {
+        clearInterval(metricsInterval);
+        metricsInterval = null;
+    }
+
+    if (unsubscribeFusion) {
+        unsubscribeFusion();
+        unsubscribeFusion = null;
+    }
+
     stopAudioAnalysis();
     stopInteractionMonitor();
     resetFusion();
+    runtimePipeline.reset();
     eventBus.clear();
     calibrationData = null;
 
@@ -150,4 +214,12 @@ export function getCalibrationData(): CalibrationData | null {
 
 export function isPipelineRunning(): boolean {
     return isRunning;
+}
+
+export function getPipelineMetrics() {
+    return runtimePipeline.getMetrics();
+}
+
+export function getTrustScoreHistory(count: number = 120) {
+    return runtimePipeline.getHistory(TOPICS.TRUST_SCORES, count);
 }
