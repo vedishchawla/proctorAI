@@ -1,8 +1,22 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import { Users, Search, RefreshCw, AlertTriangle, CheckCircle, Clock, ShieldAlert, ExternalLink } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+    Users,
+    Search,
+    RefreshCw,
+    AlertTriangle,
+    CheckCircle,
+    Clock,
+    X,
+    FileText,
+    Printer,
+    Activity,
+    Shield,
+    ChevronRight,
+    Loader2
+} from "lucide-react";
 
 interface SessionItem {
     _id: string;
@@ -17,11 +31,46 @@ interface SessionItem {
     totalViolations: number;
 }
 
+interface ViolationRecord {
+    _id: string;
+    type: string;
+    severity: string;
+    channels: string[];
+    description: string;
+    timestamp: string;
+    adminAction: string;
+}
+
+interface ReportData {
+    session: SessionItem;
+    violations: ViolationRecord[];
+    stats: {
+        totalViolations: number;
+        bySeverity: {
+            info: number;
+            low: number;
+            medium: number;
+            high: number;
+            critical: number;
+        };
+        byType: Record<string, number>;
+        byChannel: Record<string, number>;
+        dismissed: number;
+        confirmed: number;
+        pending: number;
+    };
+}
+
 export default function StudentsDashboardPage() {
     const [sessions, setSessions] = useState<SessionItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState<string>("all");
+
+    // Report modal state
+    const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+    const [reportData, setReportData] = useState<ReportData | null>(null);
+    const [reportLoading, setReportLoading] = useState(false);
 
     const fetchSessions = async () => {
         setLoading(true);
@@ -42,6 +91,29 @@ export default function StudentsDashboardPage() {
         fetchSessions();
     }, []);
 
+    // Fetch report when a student row is clicked
+    const openStudentReport = async (sessionId: string) => {
+        setSelectedSessionId(sessionId);
+        setReportLoading(true);
+        setReportData(null);
+        try {
+            const res = await fetch(`/api/reports/${sessionId}`);
+            if (res.ok) {
+                const data = await res.json();
+                setReportData(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch student report:", err);
+        } finally {
+            setReportLoading(false);
+        }
+    };
+
+    const closeReport = () => {
+        setSelectedSessionId(null);
+        setReportData(null);
+    };
+
     const filteredSessions = sessions.filter((s) => {
         const matchesSearch =
             (s.userName?.toLowerCase() || "").includes(search.toLowerCase()) ||
@@ -52,7 +124,6 @@ export default function StudentsDashboardPage() {
     });
 
     const activeCount = sessions.filter((s) => s.status === "active" || s.status === "calibrating").length;
-    const completedCount = sessions.filter((s) => s.status === "completed").length;
     const avgTrust = sessions.length > 0
         ? Math.round(sessions.reduce((acc, curr) => acc + (curr.trustScore ?? 100), 0) / sessions.length)
         : 100;
@@ -65,10 +136,10 @@ export default function StudentsDashboardPage() {
                 <div>
                     <h1 className="text-xl font-display font-bold text-white flex items-center gap-2">
                         <Users className="w-5 h-5 text-hacker-green" />
-                        Student Sessions
+                        Student Sessions & Integrity Reports
                     </h1>
                     <p className="text-xs text-gray-500 font-mono mt-0.5">
-                        Track exam integrity, historical sessions, and live test-takers
+                        Click on any student row below to inspect their full AI session integrity report
                     </p>
                 </div>
                 <button
@@ -134,7 +205,7 @@ export default function StudentsDashboardPage() {
                 </div>
             </div>
 
-            {/* Sessions Table */}
+            {/* Sessions Table with Clickable Rows */}
             <div className="glass-card overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left font-mono text-xs">
@@ -145,7 +216,7 @@ export default function StudentsDashboardPage() {
                                 <th className="p-3.5">Trust Score</th>
                                 <th className="p-3.5">Violations</th>
                                 <th className="p-3.5">Session Time</th>
-                                <th className="p-3.5 text-right">Session ID</th>
+                                <th className="p-3.5 text-right">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-subtle/50">
@@ -164,14 +235,20 @@ export default function StudentsDashboardPage() {
                                 </tr>
                             ) : (
                                 filteredSessions.map((session) => (
-                                    <tr key={session._id} className="hover:bg-white/[0.02] transition-colors">
+                                    <tr
+                                        key={session._id}
+                                        onClick={() => openStudentReport(session._id)}
+                                        className="hover:bg-hacker-green/[0.03] cursor-pointer transition-colors group"
+                                    >
                                         <td className="p-3.5">
                                             <div className="flex items-center gap-2.5">
-                                                <div className="w-7 h-7 rounded-lg bg-hacker-green/10 border border-hacker-green/20 flex items-center justify-center font-bold text-hacker-green text-xs">
+                                                <div className="w-7 h-7 rounded-lg bg-hacker-green/10 border border-hacker-green/20 flex items-center justify-center font-bold text-hacker-green text-xs group-hover:border-hacker-green transition-colors">
                                                     {session.userName?.charAt(0) || "S"}
                                                 </div>
                                                 <div>
-                                                    <p className="text-white font-medium">{session.userName || "Unnamed Candidate"}</p>
+                                                    <p className="text-white font-medium group-hover:text-hacker-green transition-colors flex items-center gap-1.5">
+                                                        {session.userName || "Unnamed Candidate"}
+                                                    </p>
                                                     <p className="text-[10px] text-gray-500">{session.userEmail || "No email"}</p>
                                                 </div>
                                             </div>
@@ -240,9 +317,10 @@ export default function StudentsDashboardPage() {
                                                   " (" + new Date(session.startTime).toLocaleDateString([], { month: "short", day: "numeric" }) + ")"
                                                 : "—"}
                                         </td>
-                                        <td className="p-3.5 text-right font-mono text-[10px] text-gray-600">
-                                            <span className="bg-surface-2 px-1.5 py-0.5 rounded border border-subtle">
-                                                {session._id.slice(-8)}
+                                        <td className="p-3.5 text-right font-mono text-[10px]">
+                                            <span className="inline-flex items-center gap-1 text-gray-500 group-hover:text-hacker-green transition-colors">
+                                                View Report
+                                                <ChevronRight className="w-3.5 h-3.5" />
                                             </span>
                                         </td>
                                     </tr>
@@ -252,7 +330,203 @@ export default function StudentsDashboardPage() {
                     </table>
                 </div>
             </div>
+
+            {/* ═══════════════════════════════════════════════════════ */}
+            {/* STUDENT INTEGRITY REPORT MODAL                          */}
+            {/* ═══════════════════════════════════════════════════════ */}
+            <AnimatePresence>
+                {selectedSessionId && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-sm">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            className="bg-surface-1 border border-subtle w-full max-w-4xl max-h-[90vh] rounded-2xl flex flex-col shadow-2xl overflow-hidden"
+                        >
+                            {/* Modal Top Bar */}
+                            <div className="flex items-center justify-between px-6 py-4 border-b border-subtle bg-surface-2/50">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-lg bg-hacker-green/10 border border-hacker-green/20 flex items-center justify-center">
+                                        <FileText className="w-4 h-4 text-hacker-green" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-sm font-display font-bold text-white flex items-center gap-2">
+                                            Student Integrity Report
+                                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-3 text-gray-400">
+                                                ID: {selectedSessionId.slice(-8)}
+                                            </span>
+                                        </h2>
+                                        <p className="text-[11px] font-mono text-gray-500">
+                                            Comprehensive 5-channel AI behavior analysis & incident log
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => window.print()}
+                                        className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-surface-3 transition-colors text-xs font-mono flex items-center gap-1.5"
+                                        title="Print / Save PDF"
+                                    >
+                                        <Printer className="w-4 h-4" />
+                                        <span className="hidden sm:inline">Print Report</span>
+                                    </button>
+                                    <button
+                                        onClick={closeReport}
+                                        className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-surface-3 transition-colors"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Modal Content */}
+                            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                                {reportLoading ? (
+                                    <div className="py-20 text-center font-mono text-xs text-gray-500">
+                                        <Loader2 className="w-6 h-6 mx-auto mb-3 animate-spin text-hacker-green" />
+                                        Aggregating multi-channel signals and incident records...
+                                    </div>
+                                ) : !reportData ? (
+                                    <div className="py-20 text-center font-mono text-xs text-gray-500">
+                                        Report data could not be retrieved.
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Examinee & Session Overview Banner */}
+                                        <div className="glass-card p-5 grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+                                            <div className="md:col-span-2 space-y-1">
+                                                <p className="font-mono text-[10px] text-gray-500 uppercase tracking-wider">Candidate Details</p>
+                                                <h3 className="text-lg font-display font-bold text-white">
+                                                    {reportData.session.userName || "Unnamed Candidate"}
+                                                </h3>
+                                                <p className="text-xs font-mono text-gray-400">{reportData.session.userEmail || "No email"}</p>
+                                                <div className="flex flex-wrap items-center gap-4 pt-2 font-mono text-[11px] text-gray-500">
+                                                    <span>Started: {new Date(reportData.session.startTime).toLocaleString()}</span>
+                                                    <span>Status: <strong className="text-white uppercase">{reportData.session.status}</strong></span>
+                                                </div>
+                                            </div>
+
+                                            {/* Trust Gauge */}
+                                            <div className="flex flex-col items-center justify-center p-4 bg-surface-2/60 rounded-xl border border-subtle">
+                                                <span className="font-mono text-[10px] text-gray-500 uppercase mb-1">Final Trust Score</span>
+                                                <div className="flex items-baseline gap-1">
+                                                    <span className={`text-4xl font-mono font-bold ${
+                                                        reportData.session.trustScore >= 80
+                                                            ? "text-hacker-green"
+                                                            : reportData.session.trustScore >= 50
+                                                            ? "text-[#ffb800]"
+                                                            : "text-[#ff3366]"
+                                                    }`}>
+                                                        {reportData.session.trustScore}
+                                                    </span>
+                                                    <span className="text-xs font-mono text-gray-600">/ 100</span>
+                                                </div>
+                                                <span className="text-[10px] font-mono mt-1 text-gray-400">
+                                                    {reportData.session.trustScore >= 80 ? "High Integrity" : reportData.session.trustScore >= 50 ? "Suspicious Activity" : "Integrity Compromised"}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Metrics Breakdown Grid */}
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
+                                            <div className="glass-card p-3.5 space-y-1">
+                                                <span className="text-[10px] text-gray-500 uppercase">Critical Severity</span>
+                                                <p className="text-xl font-bold text-[#ff3366]">{reportData.stats.bySeverity.critical}</p>
+                                                <p className="text-[9px] text-gray-600">Face missing or multiple faces</p>
+                                            </div>
+                                            <div className="glass-card p-3.5 space-y-1">
+                                                <span className="text-[10px] text-gray-500 uppercase">High Severity</span>
+                                                <p className="text-xl font-bold text-[#ffb800]">{reportData.stats.bySeverity.high}</p>
+                                                <p className="text-[9px] text-gray-600">Sustained tab/gaze deviation</p>
+                                            </div>
+                                            <div className="glass-card p-3.5 space-y-1">
+                                                <span className="text-[10px] text-gray-500 uppercase">Medium / Low</span>
+                                                <p className="text-xl font-bold text-gray-300">
+                                                    {reportData.stats.bySeverity.medium + reportData.stats.bySeverity.low}
+                                                </p>
+                                                <p className="text-[9px] text-gray-600">Minor speech/head turn blips</p>
+                                            </div>
+                                            <div className="glass-card p-3.5 space-y-1">
+                                                <span className="text-[10px] text-gray-500 uppercase">Total Incidents</span>
+                                                <p className="text-xl font-bold text-white">{reportData.stats.totalViolations}</p>
+                                                <p className="text-[9px] text-gray-600">Multi-channel correlations</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Behavioral Channels Breakdown */}
+                                        <div className="glass-card p-4 space-y-3 font-mono text-xs">
+                                            <p className="text-[10px] text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                <Activity className="w-3.5 h-3.5 text-hacker-green" />
+                                                Behavioral Channel Triggers Count
+                                            </p>
+                                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px]">
+                                                {["face", "gaze", "headPose", "audio", "interaction"].map((ch) => (
+                                                    <div key={ch} className="p-2.5 rounded bg-surface-2 border border-subtle flex flex-col justify-between">
+                                                        <span className="text-gray-400 uppercase text-[10px]">{ch}</span>
+                                                        <span className="text-base font-bold text-white mt-1">
+                                                            {reportData.stats.byChannel[ch] || 0}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Violations Timeline Log */}
+                                        <div className="glass-card p-4 space-y-3 font-mono text-xs">
+                                            <div className="flex items-center justify-between">
+                                                <p className="text-[10px] text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <AlertTriangle className="w-3.5 h-3.5 text-[#ffb800]" />
+                                                    Flagged Incident Log ({reportData.violations.length})
+                                                </p>
+                                                <span className="text-[10px] text-gray-600">Chronological order</span>
+                                            </div>
+
+                                            {reportData.violations.length === 0 ? (
+                                                <div className="p-6 text-center text-gray-500 border border-subtle rounded-lg bg-surface-2/20">
+                                                    <CheckCircle className="w-6 h-6 text-hacker-green mx-auto mb-2" />
+                                                    No violations were recorded for this session. Candidate maintained 100% integrity.
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                                                    {reportData.violations.map((v, i) => (
+                                                        <div
+                                                            key={v._id || i}
+                                                            className="p-3 rounded-lg bg-surface-2 border border-subtle flex items-start justify-between gap-3"
+                                                        >
+                                                            <div className="space-y-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span
+                                                                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                                                            v.severity === "critical"
+                                                                                ? "bg-[#ff3366]/10 text-[#ff3366] border border-[#ff3366]/30"
+                                                                                : v.severity === "high"
+                                                                                ? "bg-[#ffb800]/10 text-[#ffb800] border border-[#ffb800]/30"
+                                                                                : "bg-gray-800 text-gray-300 border border-gray-700"
+                                                                        }`}
+                                                                    >
+                                                                        {v.severity}
+                                                                    </span>
+                                                                    <span className="font-bold text-white text-xs uppercase">
+                                                                        {v.type.replace(/_/g, " ")}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-[11px] text-gray-400 font-sans">{v.description}</p>
+                                                            </div>
+                                                            <div className="text-right text-[10px] text-gray-500 flex-shrink-0">
+                                                                {new Date(v.timestamp).toLocaleTimeString()}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
-
