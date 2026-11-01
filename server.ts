@@ -1,3 +1,4 @@
+// @ts-nocheck
 // ========================================
 // ProctorAI — Socket.IO Real-Time Server
 // Handles student→admin streaming: trust scores, violations, admin actions

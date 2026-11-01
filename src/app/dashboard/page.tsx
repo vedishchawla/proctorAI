@@ -117,21 +117,24 @@ export default function DashboardPage() {
 
     // ── CONNECT SOCKET.IO ──
     useEffect(() => {
-        if (socketInitRef.current) return;
-        socketInitRef.current = true;
-
         fetchInitialData();
 
         try {
             const sock = connectSocket();
 
-            sock.on("connect", () => {
+            const onConnect = () => {
                 setSocketConnected(true);
-                // Join admin room
                 sock.emit("admin:join");
-            });
+            };
 
-            sock.on("disconnect", () => setSocketConnected(false));
+            const onDisconnect = () => setSocketConnected(false);
+
+            if (sock.connected) {
+                onConnect();
+            }
+
+            sock.on("connect", onConnect);
+            sock.on("disconnect", onDisconnect);
 
             // Initial live students dump
             sock.on("live:students", (data: { students: LiveStudent[] }) => {
@@ -189,13 +192,14 @@ export default function DashboardPage() {
                 data.students.forEach((s) => map.set(s.sessionId, s));
                 setLiveStudents(map);
             });
+
+            return () => {
+                sock.off("connect", onConnect);
+                sock.off("disconnect", onDisconnect);
+            };
         } catch (err) {
             console.warn("Socket.IO unavailable — falling back to polling", err);
         }
-
-        return () => {
-            disconnectSocket();
-        };
     }, [fetchInitialData]);
 
     // ── Computed ──

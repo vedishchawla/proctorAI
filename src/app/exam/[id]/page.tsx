@@ -566,7 +566,7 @@ export default function ExamPage() {
                     <div className="grid grid-cols-2 gap-8 mb-10 text-base">
                         <div>
                             <h2 className="text-sm font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">Examinee Details</h2>
-                            <p className="mb-1"><span className="font-semibold w-24 inline-block">Name:</span> {user?.name || user?.displayName || "Student"}</p>
+                            <p className="mb-1"><span className="font-semibold w-24 inline-block">Name:</span> {user?.name || "Student"}</p>
                             <p className="mb-1"><span className="font-semibold w-24 inline-block">Email:</span> {user?.email || "Unknown"}</p>
                             <p className="mb-1"><span className="font-semibold w-24 inline-block">User ID:</span> <span className="font-mono text-xs">{user?.uid || "Unknown"}</span></p>
                             <p className="mb-1 mt-4"><span className="font-semibold w-24 inline-block text-gray-500">Session:</span> <span className="font-mono text-xs bg-gray-100 px-1 rounded">{sessionId || "—"}</span></p>

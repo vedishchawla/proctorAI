@@ -45,7 +45,7 @@ export function analyzeAudio(calibration?: CalibrationData): SignalReading {
 
     try {
         // Get frequency data
-        analyser.getByteFrequencyData(dataArray);
+        analyser.getByteFrequencyData(dataArray as any);
 
         // Overall volume (RMS)
         let sum = 0;
@@ -125,7 +125,7 @@ export function analyzeAudio(calibration?: CalibrationData): SignalReading {
 
 export function getFrequencyData(): Uint8Array | null {
     if (!analyser || !dataArray) return null;
-    analyser.getByteFrequencyData(dataArray);
+    analyser.getByteFrequencyData(dataArray as any);
     return dataArray;
 }
 

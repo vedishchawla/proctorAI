@@ -39,9 +39,8 @@ const ViolationSchema = new Schema<ViolationDocument>(
             },
         ],
         scores: {
-            type: Map,
-            of: Number,
-            default: new Map(),
+            type: Schema.Types.Mixed,
+            default: {},
         },
         timestamp: {
             type: Date,
